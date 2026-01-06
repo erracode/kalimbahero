@@ -7,7 +7,7 @@
 import type { KalimbaKey, LaneConfig } from '@/types/game';
 
 const A4_FREQUENCY = 440;
-const getFrequency = (semitonesFromA4: number): number => 
+const getFrequency = (semitonesFromA4: number): number =>
   A4_FREQUENCY * Math.pow(2, semitonesFromA4 / 12);
 
 // Rainbow colors matching the kalimba image (left to right)
@@ -53,37 +53,37 @@ interface KalimbaKeyData {
 // D°2°, B°7°, G°5°, E°3°, C°1°, A6, F4, D2, B7°, G5°, F4°, A6°, C1, E3, G5, B7, D°2°, F°4°, A°6°, C°°1°°, E°°3°°
 const KALIMBA_KEY_DATA: KalimbaKeyData[] = [
   // Position 0-4: Left outer (high notes - ° on both note AND number)
-  { physicalPosition: 0,  scaleDegree: 2, noteName: 'D', octave: 6, semitonesFromA4: 17,  displayDegree: '2°', displayNote: 'D°' },
-  { physicalPosition: 1,  scaleDegree: 7, noteName: 'B', octave: 5, semitonesFromA4: 14,  displayDegree: '7°', displayNote: 'B°' },
-  { physicalPosition: 2,  scaleDegree: 5, noteName: 'G', octave: 5, semitonesFromA4: 10,  displayDegree: '5°', displayNote: 'G°' },
-  { physicalPosition: 3,  scaleDegree: 3, noteName: 'E', octave: 5, semitonesFromA4: 7,   displayDegree: '3°', displayNote: 'E°' },
-  { physicalPosition: 4,  scaleDegree: 1, noteName: 'C', octave: 5, semitonesFromA4: 3,   displayDegree: '1°', displayNote: 'C°' },
-  
+  { physicalPosition: 0, scaleDegree: 2, noteName: 'D', octave: 6, semitonesFromA4: 17, displayDegree: '2°', displayNote: 'D°' },
+  { physicalPosition: 1, scaleDegree: 7, noteName: 'B', octave: 5, semitonesFromA4: 14, displayDegree: '7°', displayNote: 'B°' },
+  { physicalPosition: 2, scaleDegree: 5, noteName: 'G', octave: 5, semitonesFromA4: 10, displayDegree: '5°', displayNote: 'G°' },
+  { physicalPosition: 3, scaleDegree: 3, noteName: 'E', octave: 5, semitonesFromA4: 7, displayDegree: '3°', displayNote: 'E°' },
+  { physicalPosition: 4, scaleDegree: 1, noteName: 'C', octave: 5, semitonesFromA4: 3, displayDegree: '1°', displayNote: 'C°' },
+
   // Position 5-7: Left middle (base notes - NO markers)
-  { physicalPosition: 5,  scaleDegree: 6, noteName: 'A', octave: 3, semitonesFromA4: -12, displayDegree: '6',  displayNote: 'A' },
-  { physicalPosition: 6,  scaleDegree: 4, noteName: 'F', octave: 3, semitonesFromA4: -16, displayDegree: '4',  displayNote: 'F' },
-  { physicalPosition: 7,  scaleDegree: 2, noteName: 'D', octave: 4, semitonesFromA4: -7,  displayDegree: '2',  displayNote: 'D' },
-  
+  { physicalPosition: 5, scaleDegree: 6, noteName: 'A', octave: 3, semitonesFromA4: -12, displayDegree: '6', displayNote: 'A' },
+  { physicalPosition: 6, scaleDegree: 4, noteName: 'F', octave: 3, semitonesFromA4: -16, displayDegree: '4', displayNote: 'F' },
+  { physicalPosition: 7, scaleDegree: 2, noteName: 'D', octave: 4, semitonesFromA4: -7, displayDegree: '2', displayNote: 'D' },
+
   // Position 8-11: Inner (° on NUMBER only, not on note letter)
-  { physicalPosition: 8,  scaleDegree: 7, noteName: 'B', octave: 3, semitonesFromA4: -10, displayDegree: '7°', displayNote: 'B' },
-  { physicalPosition: 9,  scaleDegree: 5, noteName: 'G', octave: 4, semitonesFromA4: -2,  displayDegree: '5°', displayNote: 'G' },
-  { physicalPosition: 10, scaleDegree: 4, noteName: 'F', octave: 4, semitonesFromA4: -4,  displayDegree: '4°', displayNote: 'F' },  // CENTER
-  { physicalPosition: 11, scaleDegree: 6, noteName: 'A', octave: 4, semitonesFromA4: 0,   displayDegree: '6°', displayNote: 'A' },
-  
+  { physicalPosition: 8, scaleDegree: 7, noteName: 'B', octave: 3, semitonesFromA4: -10, displayDegree: '7°', displayNote: 'B' },
+  { physicalPosition: 9, scaleDegree: 5, noteName: 'G', octave: 3, semitonesFromA4: -14, displayDegree: '5°', displayNote: 'G' },
+  { physicalPosition: 10, scaleDegree: 4, noteName: 'F', octave: 4, semitonesFromA4: -4, displayDegree: '4°', displayNote: 'F' },  // CENTER
+  { physicalPosition: 11, scaleDegree: 6, noteName: 'A', octave: 4, semitonesFromA4: 0, displayDegree: '6°', displayNote: 'A' },
+
   // Position 12-15: Right middle (base notes - NO markers)
-  { physicalPosition: 12, scaleDegree: 1, noteName: 'C', octave: 4, semitonesFromA4: -9,  displayDegree: '1',  displayNote: 'C' },
-  { physicalPosition: 13, scaleDegree: 3, noteName: 'E', octave: 4, semitonesFromA4: -5,  displayDegree: '3',  displayNote: 'E' },
-  { physicalPosition: 14, scaleDegree: 5, noteName: 'G', octave: 4, semitonesFromA4: -2,  displayDegree: '5',  displayNote: 'G' },
-  { physicalPosition: 15, scaleDegree: 7, noteName: 'B', octave: 4, semitonesFromA4: 2,   displayDegree: '7',  displayNote: 'B' },
-  
+  { physicalPosition: 12, scaleDegree: 1, noteName: 'C', octave: 4, semitonesFromA4: -9, displayDegree: '1', displayNote: 'C' },
+  { physicalPosition: 13, scaleDegree: 3, noteName: 'E', octave: 4, semitonesFromA4: -5, displayDegree: '3', displayNote: 'E' },
+  { physicalPosition: 14, scaleDegree: 5, noteName: 'G', octave: 4, semitonesFromA4: -2, displayDegree: '5', displayNote: 'G' },
+  { physicalPosition: 15, scaleDegree: 7, noteName: 'B', octave: 4, semitonesFromA4: 2, displayDegree: '7', displayNote: 'B' },
+
   // Position 16-18: Right outer (° on both note AND number)
-  { physicalPosition: 16, scaleDegree: 2, noteName: 'D', octave: 5, semitonesFromA4: 5,   displayDegree: '2°', displayNote: 'D°' },
-  { physicalPosition: 17, scaleDegree: 4, noteName: 'F', octave: 5, semitonesFromA4: 8,   displayDegree: '4°', displayNote: 'F°' },
-  { physicalPosition: 18, scaleDegree: 6, noteName: 'A', octave: 5, semitonesFromA4: 12,  displayDegree: '6°', displayNote: 'A°' },
-  
+  { physicalPosition: 16, scaleDegree: 2, noteName: 'D', octave: 5, semitonesFromA4: 5, displayDegree: '2°', displayNote: 'D°' },
+  { physicalPosition: 17, scaleDegree: 4, noteName: 'F', octave: 5, semitonesFromA4: 8, displayDegree: '4°', displayNote: 'F°' },
+  { physicalPosition: 18, scaleDegree: 6, noteName: 'A', octave: 5, semitonesFromA4: 12, displayDegree: '6°', displayNote: 'A°' },
+
   // Position 19-20: Far right (°° on both note AND number)
-  { physicalPosition: 19, scaleDegree: 1, noteName: 'C', octave: 6, semitonesFromA4: 15,  displayDegree: '1°°', displayNote: 'C°°' },
-  { physicalPosition: 20, scaleDegree: 3, noteName: 'E', octave: 6, semitonesFromA4: 19,  displayDegree: '3°°', displayNote: 'E°°' },
+  { physicalPosition: 19, scaleDegree: 1, noteName: 'C', octave: 6, semitonesFromA4: 15, displayDegree: '1°°', displayNote: 'C°°' },
+  { physicalPosition: 20, scaleDegree: 3, noteName: 'E', octave: 6, semitonesFromA4: 19, displayDegree: '3°°', displayNote: 'E°°' },
 ];
 
 // TAB NOTATION MAPPING
@@ -145,13 +145,13 @@ export const parseScaleNotation = (notation: string): { scaleDegree: number; oct
   const normalized = notation.trim()
     .replace(/\*\*/g, '°°').replace(/\*/g, '°')
     .replace(/''/g, '°°').replace(/'/g, '°');
-  
+
   const match = normalized.match(/^(\d)([°]*)$/);
   if (!match) return null;
-  
+
   const scaleDegree = parseInt(match[1]);
   if (scaleDegree < 1 || scaleDegree > 7) return null;
-  
+
   return { scaleDegree, octaveUp: (match[2] || '').length };
 };
 
@@ -162,10 +162,10 @@ export const findKeyByScaleNotation = (notation: { scaleDegree: number; octaveUp
 
 export const findClosestKey = (frequency: number, tolerance = 15): { key: KalimbaKey; cents: number } | null => {
   if (frequency <= 0) return null;
-  
+
   let closestKey: KalimbaKey | null = null;
   let smallestCentsDiff = Infinity;
-  
+
   for (const key of KALIMBA_KEYS) {
     const centsDiff = Math.abs(1200 * Math.log2(frequency / key.frequency));
     if (centsDiff < smallestCentsDiff) {
@@ -173,7 +173,7 @@ export const findClosestKey = (frequency: number, tolerance = 15): { key: Kalimb
       closestKey = key;
     }
   }
-  
+
   if (closestKey && smallestCentsDiff <= tolerance) {
     return { key: closestKey, cents: 1200 * Math.log2(frequency / closestKey.frequency) };
   }
@@ -221,8 +221,8 @@ export const KALIMBA_FREQUENCY_RANGE = {
 
 export const isInKalimbaRange = (frequency: number): boolean => {
   const margin = 50;
-  return frequency >= KALIMBA_FREQUENCY_RANGE.min - margin && 
-         frequency <= KALIMBA_FREQUENCY_RANGE.max + margin;
+  return frequency >= KALIMBA_FREQUENCY_RANGE.min - margin &&
+    frequency <= KALIMBA_FREQUENCY_RANGE.max + margin;
 };
 
 // Return the display labels for a key

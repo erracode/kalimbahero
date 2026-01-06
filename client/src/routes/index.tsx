@@ -9,7 +9,6 @@ import { KalimbaScene } from "@/components/game/KalimbaScene"
 import { TabViewer } from "@/components/game/TabViewer"
 import { HomeScreen } from "@/components/ui/HomeScreen"
 import { SongLibrary } from "@/components/ui/SongLibrary"
-import { SongBuilder } from "@/components/ui/SongBuilder"
 import { ScoreBoard } from "@/components/ui/ScoreBoard"
 import { ResultsScreen } from "@/components/ui/ResultsScreen"
 import { NeonButton } from "@/components/ui/NeonButton"
@@ -18,8 +17,9 @@ import { AuroraBackground } from "@/components/ui/AuroraBackground"
 import { useAudioDetection } from "@/hooks/useAudioDetection"
 import { useGameLoop } from "@/hooks/useGameLoop"
 import { useGameStore } from "@/stores/gameStore"
+import { useBuilderStore } from "@/stores/builderStore"
 import { useLocalStorage, STORAGE_KEYS } from "@/hooks/useLocalStorage"
-import { EXAMPLE_SONGS, createTestSong } from "@/utils/songParser"
+import { EXAMPLE_SONGS } from "@/utils/songParser"
 import type { Song } from "@/types/game"
 import { Pause, Play, RotateCcw, Home, Mic, MicOff } from "lucide-react"
 
@@ -29,13 +29,17 @@ export const Route = createFileRoute("/")({
   component: KalimbaHero,
 })
 
-type Screen = "home" | "library" | "builder" | "game" | "tabviewer"
+type Screen = "home" | "library" | "game" | "tabviewer"
 
 function KalimbaHero() {
+  const navigate = useNavigate()
   const [screen, setScreen] = useState<Screen>("home")
   // Persist songs in localStorage, merge with example songs
   const [storedSongs, setStoredSongs] = useLocalStorage<Song[]>(STORAGE_KEYS.SONGS, [])
-  const [editingSong, setEditingSong] = useState<Song | undefined>()
+
+  // Use global builder store
+  const { setEditingSong } = useBuilderStore()
+
   // Persist game mode in localStorage
   const [gameMode, setGameMode] = useLocalStorage<GameMode>(STORAGE_KEYS.GAME_MODE, "3d")
 
@@ -132,6 +136,17 @@ function KalimbaHero() {
     }
   }, [gameState, isListening, isSupported, startListening, stopListening])
 
+  // Check if we need to start a game (coming back from builder test play)
+  useEffect(() => {
+    // If we have a current song and we are at idle, effectively we might want to start?
+    // Actually, SongBuilderRoute calls startGame.
+    // If startGame sets gameState to 'countdown', we should switch screen to 'game'
+    if (gameState === 'countdown' || gameState === 'playing') {
+      setScreen('game')
+    }
+  }, [gameState])
+
+
   const handleStartGame = () => {
     setScreen("library")
   }
@@ -160,27 +175,12 @@ function KalimbaHero() {
 
   const handleEditSong = (song: Song) => {
     setEditingSong(song)
-    setScreen("builder")
+    navigate({ to: '/song-builder' })
   }
 
-  const handleSaveSong = (song: Song) => {
-    const existingIndex = songs.findIndex((s) => s.id === song.id)
-    if (existingIndex >= 0) {
-      const newSongs = [...songs]
-      newSongs[existingIndex] = song
-      setSongs(newSongs)
-    } else {
-      setSongs([...songs, song])
-    }
-    setEditingSong(undefined)
-    setScreen("library")
-  }
-
-  const handleTestPlay = (song: Song) => {
-    setScreen("game")
-    setTimeout(() => {
-      startGame(song)
-    }, 500)
+  const handleCreateNew = () => {
+    setEditingSong(null) // Clear for new song
+    navigate({ to: '/song-builder' })
   }
 
   const handleRestart = () => {
@@ -399,10 +399,7 @@ function KalimbaHero() {
           <HomeScreen
             key="home"
             onStartGame={handleStartGame}
-            onSongBuilder={() => {
-              setEditingSong(undefined)
-              setScreen("builder")
-            }}
+            onSongBuilder={handleCreateNew}
             onLibrary={() => setScreen("library")}
           />
         )}
@@ -414,23 +411,10 @@ function KalimbaHero() {
             onSelectSong={handleSelectSong}
             onEditSong={handleEditSong}
             onDeleteSong={handleDeleteSong}
-            onCreateNew={() => {
-              setEditingSong(undefined)
-              setScreen("builder")
-            }}
+            onCreateNew={handleCreateNew}
             onBack={handleBackToHome}
             gameMode={gameMode}
             onGameModeChange={setGameMode}
-          />
-        )}
-
-        {screen === "builder" && (
-          <SongBuilder
-            key="builder"
-            initialSong={editingSong}
-            onBack={() => setScreen("library")}
-            onTestPlay={handleTestPlay}
-            onSave={handleSaveSong}
           />
         )}
 

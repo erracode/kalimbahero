@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 
 interface NeonButtonProps extends HTMLMotionProps<'button'> {
   children: React.ReactNode;
-  variant?: 'cyan' | 'orange' | 'purple' | 'green' | 'red' | 'pink';
+  variant?: 'cyan' | 'orange' | 'purple' | 'green' | 'red' | 'pink' | 'ghost' | 'default';
   size?: 'sm' | 'md' | 'lg';
   icon?: React.ReactNode;
   fullWidth?: boolean;
@@ -45,6 +45,16 @@ const variantColors = {
     glow: '#E91E63',
     text: 'text-white',
   },
+  ghost: {
+    bg: 'bg-transparent hover:bg-white/10',
+    glow: 'transparent',
+    text: 'text-white/80 hover:text-white',
+  },
+  default: {
+    bg: 'from-slate-600 to-slate-700',
+    glow: '#94A3B8',
+    text: 'text-white',
+  },
 };
 
 const sizeStyles = {
@@ -64,7 +74,7 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
   ...motionProps
 }) => {
   const colors = variantColors[variant];
-  
+
   return (
     <motion.button
       className={cn(
@@ -86,9 +96,9 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
         disabled
           ? {}
           : {
-              scale: 1.05,
-              boxShadow: `0 0 30px ${colors.glow}70, 0 0 60px ${colors.glow}50, inset 0 1px 1px rgba(255,255,255,0.3)`,
-            }
+            scale: 1.05,
+            boxShadow: `0 0 30px ${colors.glow}70, 0 0 60px ${colors.glow}50, inset 0 1px 1px rgba(255,255,255,0.3)`,
+          }
       }
       whileTap={disabled ? {} : { scale: 0.95 }}
       disabled={disabled}
@@ -96,10 +106,10 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
     >
       {/* Shine effect */}
       <div className="absolute inset-0 rounded-xl bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
-      
+
       {/* Icon */}
       {icon && <span className="relative z-10">{icon}</span>}
-      
+
       {/* Text */}
       <span className="relative z-10 font-semibold tracking-wide">{children}</span>
     </motion.button>

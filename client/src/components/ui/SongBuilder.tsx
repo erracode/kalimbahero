@@ -4,11 +4,12 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText } from 'lucide-react';
+import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText, Wand2 } from 'lucide-react';
 import { GlassPanel } from './GlassPanel';
 import { NeonButton } from './NeonButton';
 import { ToggleButton } from './ToggleButton';
 import { IconButton } from './IconButton';
+import { AutoTranscribeModal } from './AutoTranscribeModal';
 import { Input } from './input';
 import {
   Select,
@@ -18,9 +19,9 @@ import {
   SelectValue,
 } from './select';
 import { ChartEditor } from './ChartEditor';
-import { 
-  createSongFromNotation, 
-  exportSongToJSON, 
+import {
+  createSongFromNotation,
+  exportSongToJSON,
   importSongFromJSON,
   notesToNotation,
 } from '@/utils/songParser';
@@ -31,6 +32,7 @@ interface SongBuilderProps {
   onBack: () => void;
   onTestPlay: (song: Song) => void;
   onSave: (song: Song) => void;
+  onChange?: (song: Partial<Song>) => void;
   initialSong?: Song;
 }
 
@@ -47,7 +49,7 @@ const ICONS = [
 ];
 
 const COLORS = [
-  '#00E5FF', '#FF6B6B', '#6BCB77', '#FFD93D', 
+  '#00E5FF', '#FF6B6B', '#6BCB77', '#FFD93D',
   '#9B59B6', '#FF8E53', '#E91E63', '#4D96FF',
 ];
 
@@ -60,8 +62,10 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   onBack,
   onTestPlay,
   onSave,
+  onChange,
   initialSong,
 }) => {
+  const [songId, setSongId] = useState(initialSong?.id || generateId());
   const [editorMode, setEditorMode] = useState<EditorMode>('chart');
   const [title, setTitle] = useState(initialSong?.title || '');
   const [artist, setArtist] = useState(initialSong?.artist || '');
@@ -80,10 +84,14 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   const [jsonOutput, setJsonOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
-  
+
+  // Track if initial load happened to avoid double-triggers
+  const [isLoaded, setIsLoaded] = useState(false);
+
   // Sync all state when initialSong changes (e.g., when editing a different song)
   useEffect(() => {
-    if (initialSong) {
+    if (initialSong && !isLoaded) {
+      setSongId(initialSong.id);
       setTitle(initialSong.title);
       setArtist(initialSong.artist);
       setBpm(initialSong.bpm);
@@ -96,8 +104,10 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setTimeSignature(initialSong.timeSignature || '4/4');
       setError(null);
       setJsonOutput('');
-    } else {
+      setIsLoaded(true);
+    } else if (!initialSong && !isLoaded) {
       // Reset to defaults for new song
+      setSongId(generateId());
       setTitle('');
       setArtist('');
       setBpm(120);
@@ -110,8 +120,34 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setDuration(30);
       setError(null);
       setJsonOutput('');
+      setIsLoaded(true);
     }
-  }, [initialSong]);
+  }, [initialSong, isLoaded]);
+
+  // Generate song from current inputs (memoized for effects)
+  const getCurrentSongState = useCallback((): Partial<Song> => {
+    return {
+      id: songId,
+      title: title.trim(),
+      artist: artist.trim() || 'Unknown',
+      bpm,
+      timeSignature,
+      difficulty,
+      icon,
+      iconColor,
+      notation: editorMode === 'text' ? notation : notesToNotation(notes, bpm, timeSignature),
+      notes,
+      duration: editorMode === 'chart' ? Math.max(duration, ...notes.map(n => n.time + (n.duration || 0))) : duration,
+    };
+  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode]);
+
+  // Auto-trigger onChange when state changes
+  useEffect(() => {
+    if (isLoaded && onChange) {
+      const state = getCurrentSongState();
+      onChange(state);
+    }
+  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, isLoaded, onChange, getCurrentSongState]);
 
   // Sync notes from notation when switching to chart mode
   const handleModeChange = useCallback((mode: EditorMode) => {
@@ -141,7 +177,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setEditorMode(mode);
     } else if (mode === 'text') {
       // When switching to text mode, always convert notes to notation (even if empty)
-      const newNotation = notes.length > 0 
+      const newNotation = notes.length > 0
         ? notesToNotation(notes, bpm, timeSignature)
         : '';
       setNotation(newNotation);
@@ -156,17 +192,17 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setError('Please enter a title');
       return null;
     }
-    
+
     let songNotes: SongNote[] = [];
     let songDuration = duration;
     let songNotation = notation;
-    
+
     if (editorMode === 'text') {
       if (!notation.trim()) {
         setError('Please enter some notation');
         return null;
       }
-      
+
       try {
         setError(null);
         const song = createSongFromNotation(notation, {
@@ -189,12 +225,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         setError('Please add some notes to the chart');
         return null;
       }
-      
+
       songNotes = notes;
       songDuration = Math.max(duration, ...notes.map(n => n.time + n.duration)) + 2;
       songNotation = notesToNotation(notes, bpm, timeSignature);
     }
-    
+
     const song: Song = {
       id: initialSong?.id || `song_${Date.now()}`,
       title: title.trim(),
@@ -208,7 +244,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       notes: songNotes,
       duration: songDuration,
     };
-    
+
     setError(null);
     return song;
   }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong]);
@@ -266,6 +302,19 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
     }
   };
 
+  const [showTranscribeModal, setShowTranscribeModal] = useState(false);
+
+  const handleTranscribeComplete = (newNotes: SongNote[], newBpm: number) => {
+    setNotes(newNotes); // Replace notes or Append? Ideally Replace for a fresh transcribe.
+    setBpm(newBpm);
+
+    // Recalculate duration
+    if (newNotes.length > 0) {
+      const lastNote = newNotes[newNotes.length - 1];
+      setDuration(Math.ceil(lastNote.time + (lastNote.duration || 1)) + 4);
+    }
+  };
+
   return (
     <motion.div
       className="fixed inset-0 z-10 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 overflow-hidden flex flex-col"
@@ -273,6 +322,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
+      <AutoTranscribeModal
+        isOpen={showTranscribeModal}
+        onClose={() => setShowTranscribeModal(false)}
+        onTranscribeComplete={handleTranscribeComplete}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between gap-4 p-4 bg-black/30 border-b border-white/10">
         <div className="flex items-center gap-4">
@@ -284,12 +339,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
           >
             Back
           </NeonButton>
-          
+
           <h1 className="text-2xl font-black text-white">
             CHART BUILDER
           </h1>
         </div>
-        
+
         {/* Editor Mode Toggle */}
         <div className="flex items-center gap-2 bg-white/5 rounded-xl p-1 border border-white/10">
           <ToggleButton
@@ -311,9 +366,19 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
             Tab Notation
           </ToggleButton>
         </div>
-        
+
         {/* Action buttons */}
         <div className="flex items-center gap-2">
+          <NeonButton
+            variant="pink"
+            size="sm"
+            icon={<Wand2 className="w-4 h-4" />}
+            onClick={() => setShowTranscribeModal(true)}
+            title="Auto-Transcribe from Audio"
+          >
+            Magic Import
+          </NeonButton>
+
           <IconButton
             variant={showSettings ? 'default' : 'ghost'}
             size="md"
@@ -321,7 +386,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
             title="Toggle settings"
             onClick={() => setShowSettings(!showSettings)}
           />
-          
+
           <NeonButton
             variant="cyan"
             size="sm"
@@ -330,7 +395,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
           >
             Test
           </NeonButton>
-          
+
           <NeonButton
             variant="green"
             size="sm"
@@ -427,11 +492,10 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                       <button
                         key={i.id}
                         onClick={() => setIcon(i.id)}
-                        className={`w-8 h-8 rounded text-lg flex items-center justify-center transition-all cursor-pointer ${
-                          icon === i.id
-                            ? 'bg-white/20 ring-2 ring-cyan-500'
-                            : 'bg-white/10 hover:bg-white/20'
-                        }`}
+                        className={`w-8 h-8 rounded text-lg flex items-center justify-center transition-all cursor-pointer ${icon === i.id
+                          ? 'bg-white/20 ring-2 ring-cyan-500'
+                          : 'bg-white/10 hover:bg-white/20'
+                          }`}
                       >
                         {i.emoji}
                       </button>
@@ -447,9 +511,8 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                       <button
                         key={color}
                         onClick={() => setIconColor(color)}
-                        className={`w-6 h-6 rounded-full transition-all cursor-pointer ${
-                          iconColor === color ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900' : ''
-                        }`}
+                        className={`w-6 h-6 rounded-full transition-all cursor-pointer ${iconColor === color ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900' : ''
+                          }`}
                         style={{ backgroundColor: color }}
                       />
                     ))}
@@ -498,7 +561,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                       )}
                     </div>
                   </div>
-                  
+
                   {jsonOutput && (
                     <pre className="bg-black/30 rounded p-2 text-[10px] text-white/50 overflow-auto max-h-32 font-mono">
                       {jsonOutput}
