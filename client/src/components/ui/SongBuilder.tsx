@@ -2,10 +2,9 @@
 // Kalimba Hero - Song Builder Component
 // ============================================
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText, Wand2 } from 'lucide-react';
-import { GlassPanel } from './GlassPanel';
+import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText, Wand2, Cloud, Globe } from 'lucide-react';
 import { NeonButton } from './NeonButton';
 import { ToggleButton } from './ToggleButton';
 import { IconButton } from './IconButton';
@@ -25,15 +24,15 @@ import {
   importSongFromJSON,
   notesToNotation,
 } from '@/utils/songParser';
-import { KALIMBA_KEYS } from '@/utils/frequencyMap';
 import type { Song, SongNote, Difficulty, TimeSignature } from '@/types/game';
 
 interface SongBuilderProps {
   onBack: () => void;
   onTestPlay: (song: Song) => void;
-  onSave: (song: Song) => void;
+  onSave: (song: Song, options?: { cloud?: boolean; publish?: boolean }) => void;
   onChange?: (song: Partial<Song>) => void;
   initialSong?: Song;
+  isAuthenticated?: boolean;
 }
 
 type EditorMode = 'text' | 'chart';
@@ -64,6 +63,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   onSave,
   onChange,
   initialSong,
+  isAuthenticated = false,
 }) => {
   const [songId, setSongId] = useState(initialSong?.id || generateId());
   const [editorMode, setEditorMode] = useState<EditorMode>('chart');
@@ -74,13 +74,15 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
     initialSong?.timeSignature || '4/4'
   );
   const [difficulty, setDifficulty] = useState<Difficulty>(
-    initialSong?.difficulty || 'medium'
+    (initialSong?.difficulty as Difficulty) || 'medium'
   );
   const [icon, setIcon] = useState(initialSong?.icon || 'music');
   const [iconColor, setIconColor] = useState(initialSong?.iconColor || '#00E5FF');
   const [notation, setNotation] = useState(initialSong?.notation || '');
   const [notes, setNotes] = useState<SongNote[]>(initialSong?.notes || []);
   const [duration, setDuration] = useState(initialSong?.duration || 30);
+  const [isPublic, setIsPublic] = useState(false); // Default to private cloud save
+  const [syncToCloud, setSyncToCloud] = useState(false);
   const [jsonOutput, setJsonOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
@@ -95,13 +97,15 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setTitle(initialSong.title);
       setArtist(initialSong.artist);
       setBpm(initialSong.bpm);
-      setDifficulty(initialSong.difficulty);
+      setDifficulty(initialSong.difficulty as Difficulty);
       setIcon(initialSong.icon || 'music');
       setIconColor(initialSong.iconColor || '#00E5FF');
       setNotation(initialSong.notation || '');
       setNotes(initialSong.notes || []);
       setDuration(initialSong.duration || 30);
       setTimeSignature(initialSong.timeSignature || '4/4');
+      setIsPublic(initialSong.isPublic || false);
+      setSyncToCloud(initialSong.isCloud || false);
       setError(null);
       setJsonOutput('');
       setIsLoaded(true);
@@ -227,12 +231,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       }
 
       songNotes = notes;
-      songDuration = Math.max(duration, ...notes.map(n => n.time + n.duration)) + 2;
+      songDuration = Math.max(duration, ...notes.map(n => n.time + (n.duration || 0))) + 2;
       songNotation = notesToNotation(notes, bpm, timeSignature);
     }
 
     const song: Song = {
-      id: initialSong?.id || `song_${Date.now()}`,
+      id: songId,
       title: title.trim(),
       artist: artist.trim() || 'Unknown',
       bpm,
@@ -243,11 +247,14 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       notation: songNotation,
       notes: songNotes,
       duration: songDuration,
+      isCloud: syncToCloud,
+      isPublic: isPublic,
+      cloudId: initialSong?.cloudId,
     };
 
     setError(null);
     return song;
-  }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong]);
+  }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong, syncToCloud, isPublic]);
 
   // Handle test play
   const handleTestPlay = () => {
@@ -261,7 +268,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   const handleSave = () => {
     const song = generateSong();
     if (song) {
-      onSave(song);
+      onSave(song, { cloud: syncToCloud, publish: isPublic });
     }
   };
 
@@ -282,7 +289,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         setTitle(song.title);
         setArtist(song.artist);
         setBpm(song.bpm);
-        setDifficulty(song.difficulty);
+        setDifficulty(song.difficulty as Difficulty);
         setIcon(song.icon || 'music');
         setIconColor(song.iconColor || '#00E5FF');
         setNotation(song.notation || '');
@@ -519,17 +526,53 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                   </div>
                 </div>
 
-                {/* Duration info (for chart mode) - now controlled in ChartEditor via beats */}
-                {editorMode === 'chart' && (
-                  <div className="p-2 bg-white/5 rounded-lg">
-                    <span className="text-sm text-white/60">
-                      Duration: {Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, '0')}
-                    </span>
-                    <span className="text-xs text-white/40 ml-2">
-                      (set beats in editor)
-                    </span>
+                {/* Cloud Sync Settings */}
+                <div className="pt-4 border-t border-white/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Cloud className={`w-4 h-4 ${syncToCloud ? 'text-cyan-400' : 'text-white/30'}`} />
+                      <span className="text-sm text-white">Cloud Sync</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (isAuthenticated) {
+                          setSyncToCloud(!syncToCloud);
+                        } else {
+                          // Prompt login
+                          setError('Please login to enable cloud sync');
+                          setTimeout(() => setError(null), 3000);
+                        }
+                      }}
+                      className={`w-10 h-5 rounded-full transition-colors relative ${syncToCloud ? 'bg-cyan-500' : 'bg-white/10'}`}
+                    >
+                      <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${syncToCloud ? 'right-1' : 'left-1'}`} />
+                    </button>
                   </div>
-                )}
+
+                  {syncToCloud && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="flex items-center justify-between pl-6"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Globe className={`w-4 h-4 ${isPublic ? 'text-purple-400' : 'text-white/30'}`} />
+                        <span className="text-xs text-white/70">Public Discovery</span>
+                      </div>
+                      <button
+                        onClick={() => setIsPublic(!isPublic)}
+                        className={`w-8 h-4 rounded-full transition-colors relative ${isPublic ? 'bg-purple-500' : 'bg-white/10'}`}
+                      >
+                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${isPublic ? 'right-0.5' : 'left-0.5'}`} />
+                      </button>
+                    </motion.div>
+                  )}
+                  <p className="text-[10px] text-white/40">
+                    {!isAuthenticated
+                      ? 'Login to backup your tracks.'
+                      : syncToCloud ? 'Your song will be backed up to the cloud when you save.' : 'Only saved locally in this browser.'}
+                  </p>
+                </div>
 
                 {/* JSON Import/Export */}
                 <div className="pt-4 border-t border-white/10">

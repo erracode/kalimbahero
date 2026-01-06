@@ -60,15 +60,30 @@ export interface Song {
   color?: string;
   notation?: string;      // original notation string
   createdAt?: number;     // timestamp
+  isCloud?: boolean;      // synced to cloud
+  isPublic?: boolean;     // published to community
+  cloudId?: string;       // server UUID for cloud operations
+  author?: {
+    id: string;
+    name: string;
+    image?: string;
+  };
+  plays?: number;
+  likes?: number;
+  isLiked?: boolean;
+  isFavorited?: boolean;
 }
 
 // Real-time pitch detection result
 export interface DetectedPitch {
   frequency: number;
   clarity: number;        // 0-1 confidence
-  note?: string;          // matched note name
+  note?: string;          // matched note name (legacy)
+  noteName?: string;      // matched note name (full name like C4)
   keyIndex?: number;      // matched kalimba key
-  cents?: number;         // deviation from perfect pitch
+  cents: number;          // deviation from perfect pitch
+  volume?: number;        // RMS volume (0-1)
+  timestamp?: number;     // for tracking timing
 }
 
 // Game settings

@@ -3,14 +3,18 @@
 // ============================================
 
 import { motion } from 'framer-motion';
-import { Music, Wrench, Library } from 'lucide-react';
-import { GlassPanel, GlassCard } from './GlassPanel';
+import { Music, Wrench, Library, User, Mic2 } from 'lucide-react';
+import { GlassPanel } from './GlassPanel';
 import { NeonButton } from './NeonButton';
 
 interface HomeScreenProps {
   onStartGame: () => void;
   onSongBuilder: () => void;
   onLibrary: () => void;
+  onTuner: () => void;
+  onLogin: () => void;
+  isLoggedIn?: boolean;
+  userName?: string | null;
 }
 
 // Kalimba icon SVG component
@@ -63,6 +67,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onStartGame,
   onSongBuilder,
   onLibrary,
+  onTuner,
+  onLogin,
+  isLoggedIn = false,
+  userName = null,
 }) => {
   return (
     <motion.div
@@ -130,6 +138,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         >
           LIBRARY
         </NeonButton>
+
+        <NeonButton
+          variant="pink"
+          size="lg"
+          icon={<Mic2 className="w-5 h-5" />}
+          onClick={onTuner}
+        >
+          TUNER
+        </NeonButton>
+
+        <NeonButton
+          variant="cyan"
+          size="lg"
+          icon={<User className="w-5 h-5" />}
+          onClick={onLogin}
+        >
+          {isLoggedIn ? (userName ? `HI, ${userName.toUpperCase()}` : "PROFILE") : "LOGIN"}
+        </NeonButton>
       </motion.div>
 
       {/* Feature cards */}
@@ -175,7 +201,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           Press <kbd className="px-2 py-1 bg-white/10 rounded text-white/50">Space</kbd> to start quickly
         </p>
       </motion.div>
-    </motion.div>
+    </motion.div >
   );
 };
 

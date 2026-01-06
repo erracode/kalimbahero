@@ -35,7 +35,7 @@ const getTineLength = (keyIndex: number): number => {
   return maxLength - (distanceFromCenter * (maxLength - minLength)) / center
 }
 
-// Individual tine component - hangs DOWN from top
+// Individual tine component
 const Tine = ({
   keyIndex,
   isActive,
@@ -46,80 +46,62 @@ const Tine = ({
   showLabel?: boolean
 }) => {
   const meshRef = useRef<THREE.Mesh>(null)
-  const glowRef = useRef<THREE.Mesh>(null)
+  const groupRef = useRef<THREE.Group>(null)
 
   const length = getTineLength(keyIndex)
   const baseColor = getKeyColor(keyIndex)
   const label = getKeyDisplayLabel(keyIndex)
-  // Use same lane width and gap as lanes in the scene (0.75, 0.15)
   const xPosition = getLaneXPosition(keyIndex, 0.75, 0.15)
-
-  // Center key (F/4° at position 10) is special
   const isCenterKey = keyIndex === 10
 
   useFrame((state) => {
-    if (meshRef.current && glowRef.current) {
-      const targetEmissive = isActive ? 0.8 : 0.15
-      const material = meshRef.current.material as THREE.MeshStandardMaterial
-      material.emissiveIntensity = THREE.MathUtils.lerp(
-        material.emissiveIntensity,
-        targetEmissive,
-        0.15
-      )
-
-      // Pulsing glow when active
+    if (groupRef.current) {
+      // Rotation vibration when active
       if (isActive) {
-        const pulse = 1 + Math.sin(state.clock.elapsedTime * 8) * 0.12
-        glowRef.current.scale.set(pulse, 1, pulse)
+        const time = state.clock.elapsedTime * 40
+        groupRef.current.rotation.x = Math.sin(time) * 0.05
       } else {
-        glowRef.current.scale.set(1, 1, 1)
+        groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, 0, 0.1)
+      }
+
+      if (meshRef.current) {
+        const material = meshRef.current.material as THREE.MeshStandardMaterial
+        const targetIntensity = isActive ? 0.8 : 0.1
+        material.emissiveIntensity = THREE.MathUtils.lerp(
+          material.emissiveIntensity,
+          targetIntensity,
+          0.1
+        )
       }
     }
   })
 
-  // Tine extends forward in Z direction ONLY (positive Z), starting exactly at the white bar (Z=0)
-  // Position: X from getLaneXPosition, Y=0 (same as lanes), Z starts at 0 and extends forward ONLY
-  // The planeGeometry's second arg is the length along Z axis - it extends from 0 to length
   return (
-    <group position={[xPosition, 0, 0]}>
-      {/* Glow effect behind tine - same orientation as lanes, extends forward only */}
-      <mesh
-        ref={glowRef}
-        position={[0, 0, length / 2]}
-        rotation={[-Math.PI / 2, 0, 0]}
-      >
-        <planeGeometry args={[0.7, length]} />
-        <meshBasicMaterial
-          color={baseColor}
-          transparent
-          opacity={isActive ? 0.7 : 0.12}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-
-      {/* Main tine body - flat plane like lanes, extending from Z=0 to Z=length (forward only, no backward) */}
-      <mesh
-        ref={meshRef}
-        position={[0, 0, length / 2]}
-        rotation={[-Math.PI / 2, 0, 0]}
-      >
-        <planeGeometry args={[0.65, length]} />
+    <group position={[xPosition, 0.12, 0]} ref={groupRef}>
+      {/* Tine Body (The actual metal key) */}
+      <mesh ref={meshRef} position={[0, 0, length / 2]} castShadow>
+        <boxGeometry args={[0.5, 0.08, length]} />
         <meshStandardMaterial
-          color={baseColor}
-          transparent
-          opacity={0.6}
-          side={THREE.DoubleSide}
+          color="#CCCCCC"
+          metalness={0.9}
+          roughness={0.1}
           emissive={baseColor}
-          emissiveIntensity={0.2}
-          metalness={0.7}
-          roughness={0.3}
+          emissiveIntensity={0.1}
         />
       </mesh>
 
-      {/* HTML Labels at the END of each tine - positioned ABOVE the tines (higher Y) at Z=length */}
+      {/* Glow highlight on top of the tine */}
+      {isActive && (
+        <mesh position={[0, 0.05, length / 2]}>
+          <boxGeometry args={[0.52, 0.02, length]} />
+          <meshBasicMaterial color={baseColor} transparent opacity={0.4} />
+        </mesh>
+      )}
+
+      {/* Label at the end */}
       {showLabel && (
         <Html
-          position={[0, 0.15, length]}
+          position={[0, 0.2, length * 0.9]}
           center
           scale={0.5}
           style={{
@@ -133,47 +115,55 @@ const Tine = ({
               flexDirection: "column",
               alignItems: "center",
               gap: "2px",
-              fontFamily: "Arial, sans-serif",
+              fontFamily: "Outfit, sans-serif",
               fontWeight: "bold",
-              textShadow: "0 0 4px rgba(0,0,0,1), 0 0 8px rgba(0,0,0,0.9)",
+              textShadow: "0 0 10px rgba(0,0,0,0.8)",
               whiteSpace: "nowrap",
             }}
           >
-            {/* Scale degree on top */}
-            <span
-              style={{
-                color: isCenterKey ? "#FF6B6B" : "#fff",
-                fontSize: "14px",
-                lineHeight: 1,
-                fontWeight: 700,
-              }}
-            >
+            <span style={{ color: isCenterKey ? "#FF6B6B" : "#fff", fontSize: "14px", opacity: 0.9 }}>
               {label.degree}
             </span>
-            {/* Note letter below */}
-            <span
-              style={{
-                color: "#fff",
-                fontSize: "16px",
-                lineHeight: 1,
-                fontWeight: 700,
-              }}
-            >
+            <span style={{ color: "#fff", fontSize: "12px", opacity: 0.7 }}>
               {label.note}
             </span>
           </div>
         </Html>
       )}
+    </group>
+  )
+}
 
-      {/* Active indicator - point light when playing */}
-      {isActive && (
-        <pointLight
-          position={[0, 0.2, length / 2]}
-          color={baseColor}
-          intensity={2}
-          distance={2}
+const KalimbaBody = () => {
+  return (
+    <group position={[0, -0.4, 3.5]}>
+      {/* Wooden Body */}
+      <mesh receiveShadow castShadow>
+        <boxGeometry args={[18, 1, 9]} />
+        <meshStandardMaterial
+          color="#3d2b1f"
+          roughness={0.6}
+          metalness={0.1}
         />
-      )}
+      </mesh>
+
+      {/* Sound Hole */}
+      <mesh position={[0, 0.51, 1]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[1.2, 32]} />
+        <meshBasicMaterial color="#111" />
+      </mesh>
+
+      {/* Top Bridge Bar (Metal) */}
+      <mesh position={[0, 0.55, -3.5]}>
+        <boxGeometry args={[17.5, 0.15, 0.1]} />
+        <meshStandardMaterial color="#888" metalness={0.8} />
+      </mesh>
+
+      {/* Pressure Bar (The one that holds the tines down) */}
+      <mesh position={[0, 0.7, -2.5]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.1, 0.1, 17.5, 12]} />
+        <meshStandardMaterial color="#666" metalness={1} />
+      </mesh>
     </group>
   )
 }
@@ -190,7 +180,8 @@ export const Kalimba3D = ({
 
   return (
     <group ref={groupRef} position={position}>
-      {/* All 21 tines - starting exactly at the white bar, extending forward in Z */}
+      <KalimbaBody />
+      {/* All 21 tines */}
       {KALIMBA_KEYS.map((_, index) => (
         <Tine
           key={`tine-${index}`}

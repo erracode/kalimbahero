@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { SongBuilder } from '@/components/ui/SongBuilder';
 import { useBuilderStore } from '@/stores/builderStore';
+import { useSongStore } from '@/stores/songStore';
 import { useGameStore } from '@/stores/gameStore';
-import { useLocalStorage, STORAGE_KEYS } from '@/hooks/useLocalStorage';
-import { EXAMPLE_SONGS } from '@/utils/songParser';
 import type { Song } from '@/types/game';
 import { useCallback } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { useAuthSync } from '@/hooks/useAuthSync';
 
 export const Route = createFileRoute('/song-builder')({
     component: SongBuilderRoute,
@@ -16,60 +17,77 @@ function SongBuilderRoute() {
     const { editingSong, setEditingSong } = useBuilderStore();
     const { startGame } = useGameStore();
 
-    // We need to access the main song storage to save changes
-    // Ideally this should be a unified store, but for now we reuse the hook logic
-    // replicated from index.tsx or moved to a store. 
-    // Since useLocalStorage is a hook, we can use it here to read/write to the same key.
-    const [storedSongs, setStoredSongs] = useLocalStorage<Song[]>(STORAGE_KEYS.SONGS, []);
+    const { isAuthenticated } = useAuth();
+    const { syncSong, deleteCloudSong } = useAuthSync();
+    const { addSong, updateSong, markAsSynced, markAsUnsynced, songs } = useSongStore();
 
-    const handleSave = useCallback((song: Song) => {
-        // 1. Update local storage (User Library)
-        setStoredSongs((prevMap) => {
-            // Logic copied from index.tsx mainly
-            const prev = prevMap || [];
-            const existingIndex = prev.findIndex((s) => s.id === song.id);
+    const handleSave = useCallback(async (song: Song, options?: { cloud?: boolean; publish?: boolean }) => {
+        // 1. Prepare song with intent flags for local storage
+        const localSong = {
+            ...song,
+            isCloud: options?.cloud || false,
+            isPublic: options?.publish || false
+        };
 
-            let newSongs;
-            if (existingIndex >= 0) {
-                newSongs = [...prev];
-                newSongs[existingIndex] = song;
-            } else {
-                newSongs = [...prev, song];
+        // 2. Update store (local library)
+        const isNew = !songs.find(s => s.id === localSong.id);
+        if (isNew) {
+            addSong(localSong);
+        } else {
+            updateSong(localSong.id, localSong);
+        }
+
+        let finalSong = localSong;
+
+        // 3. Optional: Cloud Sync or Unsync
+        if (isAuthenticated) {
+            if (options?.cloud) {
+                try {
+                    const result = await syncSong(localSong);
+                    if (result.success && result.data?.id) {
+                        // Update the local song with server metadata
+                        const cloudId = result.data.id;
+                        const isPublic = result.data.isPublic;
+                        markAsSynced(localSong.id, cloudId, isPublic);
+
+                        // Incorporate cloud metadata into the song we'll store in builderState
+                        finalSong = { ...localSong, cloudId, isCloud: true, isPublic };
+                    }
+                } catch (err) {
+                    console.error("Cloud sync failed", err);
+                }
+            } else if (localSong.cloudId) {
+                try {
+                    await deleteCloudSong(localSong.cloudId);
+                    markAsUnsynced(localSong.id);
+                    finalSong = { ...localSong, cloudId: undefined, isCloud: false, isPublic: false };
+                } catch (err) {
+                    console.error("Cloud removal failed", err);
+                }
             }
-            return newSongs;
-        });
+        }
 
-        // 2. Update builder store current state
-        setEditingSong(song);
+        // 3. Update builder store current state with final version (including cloudId if synced)
+        setEditingSong(finalSong);
 
-        // 3. Navigate back to library
-        navigate({ to: '/' });
-    }, [setStoredSongs, setEditingSong, navigate]);
+        // 4. Navigate back to library
+        navigate({ to: '/library' });
+    }, [addSong, updateSong, markAsSynced, markAsUnsynced, songs, setEditingSong, navigate, isAuthenticated, syncSong, deleteCloudSong]);
 
     const handleBack = useCallback(() => {
-        // Optional: Ask for confirmation if unsaved changes?
-        navigate({ to: '/' });
+        navigate({ to: '/library' });
     }, [navigate]);
 
     const handleTestPlay = useCallback((song: Song) => {
-        // To test play, we can start the game with this song
-        // But we need to be on the game route/screen.
-        // Current "Game" is on index route with screen="game".
-        // We might need to handle this differently with the new routing.
-        // For now, let's verify if we can navigate to index and trigger play.
-
-        // We update the editing song so it persists
         setEditingSong(song);
-
-        // We could pass state to navigate, or just update gameStore
         startGame(song);
-        navigate({ to: '/' });
+        navigate({ to: '/game/$songId', params: { songId: song.id } });
     }, [navigate, setEditingSong, startGame]);
 
 
-    // Update store immediately (Zustand is fast enough, persist middleware handles storage IO)
+    // Update store immediately
     const handleChange = useCallback((partialSong: Partial<Song>) => {
-        setEditingSong((prev) => {
+        setEditingSong((prev: Song | null) => {
             if (!prev) return null;
             return { ...prev, ...partialSong } as Song;
         });
@@ -82,6 +100,7 @@ function SongBuilderRoute() {
             onSave={handleSave}
             onTestPlay={handleTestPlay}
             onChange={handleChange}
+            isAuthenticated={isAuthenticated}
         />
     );
 }

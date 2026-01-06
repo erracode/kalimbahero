@@ -12,6 +12,7 @@ interface UseAudioDetectionOptions {
   enabled?: boolean;
   clarityThreshold?: number;  // Minimum clarity to consider a valid pitch (0-1)
   pitchTolerance?: number;    // Cents tolerance for note matching
+  volumeThreshold?: number;   // Minimum RMS volume level (0-1)
   sampleRate?: number;
   fftSize?: number;
 }
@@ -33,6 +34,7 @@ export const useAudioDetection = (
     enabled = true,
     clarityThreshold = 0.85,
     pitchTolerance = 15,
+    volumeThreshold = 0.003,
     sampleRate = 44100,
     fftSize = 2048,
   } = options;
@@ -49,12 +51,30 @@ export const useAudioDetection = (
   const detectorRef = useRef<PitchDetector<Float32Array> | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const dataArrayRef = useRef<Float32Array | null>(null);
+  const isListeningRef = useRef(false);
+
+  // Refs for options to avoid stale closures
+  const clarityThresholdRef = useRef(clarityThreshold);
+  const pitchToleranceRef = useRef(pitchTolerance);
+  const volumeThresholdRef = useRef(volumeThreshold);
+
+  useEffect(() => {
+    clarityThresholdRef.current = clarityThreshold;
+  }, [clarityThreshold]);
+
+  useEffect(() => {
+    pitchToleranceRef.current = pitchTolerance;
+  }, [pitchTolerance]);
+
+  useEffect(() => {
+    volumeThresholdRef.current = volumeThreshold;
+  }, [volumeThreshold]);
 
   // Check browser support
   useEffect(() => {
     const supported = !!(
       navigator.mediaDevices &&
-      navigator.mediaDevices.getUserMedia &&
+      typeof navigator.mediaDevices.getUserMedia === 'function' &&
       window.AudioContext
     );
     setIsSupported(supported);
@@ -79,45 +99,66 @@ export const useAudioDetection = (
 
   // Pitch detection loop
   const detectPitch = useCallback(() => {
-    if (!analyserRef.current || !detectorRef.current || !dataArrayRef.current) {
+    if (!isListeningRef.current || !analyserRef.current || !detectorRef.current || !dataArrayRef.current || !audioContextRef.current) {
       return;
     }
 
     // Get time-domain data
     analyserRef.current.getFloatTimeDomainData(dataArrayRef.current);
 
+    // Calculate RMS volume (amplitude)
+    let sum = 0;
+    for (let i = 0; i < dataArrayRef.current.length; i++) {
+      sum += dataArrayRef.current[i] * dataArrayRef.current[i];
+    }
+    const rms = Math.sqrt(sum / dataArrayRef.current.length);
+
     // Detect pitch
     const [frequency, clarity] = detectorRef.current.findPitch(
-      dataArrayRef.current,
-      sampleRate
+      dataArrayRef.current as any,
+      audioContextRef.current.sampleRate
     );
 
-    // Only process if clarity is above threshold
-    if (clarity >= clarityThreshold && frequency > 0) {
-      // Check if frequency is in kalimba range
-      if (isInKalimbaRange(frequency)) {
-        const match = findClosestKey(frequency, pitchTolerance);
-        
-        if (match) {
-          setCurrentPitch({
-            frequency,
-            clarity,
-            noteName: match.key.noteName,
-            cents: match.cents,
-            timestamp: performance.now(),
-          });
+    // Only process if clarity is high and frequency is plausible
+    if (clarity >= clarityThresholdRef.current && frequency > 50 && frequency < 3200) {
+      const passesVolume = rms >= volumeThresholdRef.current;
+
+      if (passesVolume) {
+        // Check if frequency is in kalimba range
+        if (isInKalimbaRange(frequency)) {
+          const match = findClosestKey(frequency, pitchToleranceRef.current);
+
+          if (match) {
+            console.log(`✅ ${match.key.noteName}: ${frequency.toFixed(1)}Hz (Vol: ${(rms * 100).toFixed(2)}%)`);
+            setCurrentPitch({
+              frequency,
+              clarity,
+              noteName: match.key.noteName,
+              cents: match.cents,
+              volume: rms,
+              timestamp: performance.now(),
+            });
+          } else {
+            // Frequency detected but no matching kalimba key within tolerance
+            setCurrentPitch({
+              frequency,
+              clarity,
+              noteName: '-',
+              cents: 0,
+              volume: rms,
+              timestamp: performance.now(),
+            });
+          }
         } else {
-          // Frequency detected but no matching kalimba key
-          setCurrentPitch({
-            frequency,
-            clarity,
-            noteName: '-',
-            cents: 0,
-            timestamp: performance.now(),
-          });
+          // Frequency outside kalimba range but loud
+          // console.log(`Rejected (Range): ${frequency.toFixed(2)}Hz (Vol: ${(rms * 100).toFixed(2)}%)`);
+          setCurrentPitch(null);
         }
       } else {
-        // Frequency outside kalimba range
+        // Log what's being rejected by volume so we can adjust
+        if (frequency < 2000) { // Don't log quiet noise spikes
+          // console.log(`Rejected (Low Vol): ${frequency.toFixed(2)}Hz (Vol: ${(rms * 100).toFixed(2)}%)`);
+        }
         setCurrentPitch(null);
       }
     } else {
@@ -127,11 +168,11 @@ export const useAudioDetection = (
 
     // Continue loop
     animationFrameRef.current = requestAnimationFrame(detectPitch);
-  }, [clarityThreshold, pitchTolerance, sampleRate]);
+  }, []);
 
   // Start listening
   const startListening = useCallback(async () => {
-    if (!isSupported || !enabled) return;
+    if (!isSupported) return;
     if (isListening) return;
 
     try {
@@ -149,6 +190,12 @@ export const useAudioDetection = (
 
       // Create audio context
       const audioContext = new AudioContext({ sampleRate });
+
+      // Ensure audio context is running (required by some browsers)
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
       audioContextRef.current = audioContext;
 
       // Create analyser node
@@ -156,15 +203,24 @@ export const useAudioDetection = (
       analyser.fftSize = fftSize;
       analyserRef.current = analyser;
 
-      // Connect microphone to analyser
+      // Create High Pass Filter to remove mains hum (60Hz) and low room noise
+      const highPassFilter = audioContext.createBiquadFilter();
+      highPassFilter.type = 'highpass';
+      highPassFilter.frequency.setValueAtTime(150, audioContext.currentTime); // Kalimba lowest note starts higher
+
+      // Connect microphone -> Filter -> Analyser
       const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
+      source.connect(highPassFilter);
+      highPassFilter.connect(analyser);
 
       // Create pitch detector
       detectorRef.current = PitchDetector.forFloat32Array(analyser.fftSize);
       dataArrayRef.current = new Float32Array(analyser.fftSize);
 
       setIsListening(true);
+      isListeningRef.current = true;
+
+      console.log('Audio detection started successfully');
 
       // Start detection loop
       detectPitch();
@@ -172,6 +228,7 @@ export const useAudioDetection = (
       console.error('Failed to start audio detection:', err);
       setError('Failed to access microphone');
       setIsListening(false);
+      isListeningRef.current = false;
     }
   }, [isSupported, enabled, isListening, sampleRate, fftSize, detectPitch]);
 
@@ -201,6 +258,7 @@ export const useAudioDetection = (
     dataArrayRef.current = null;
 
     setIsListening(false);
+    isListeningRef.current = false;
     setCurrentPitch(null);
   }, []);
 
@@ -230,10 +288,3 @@ export const useAudioDetection = (
 };
 
 export default useAudioDetection;
-
-
-
-
-
-
-

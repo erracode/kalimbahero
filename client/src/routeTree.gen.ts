@@ -9,12 +9,37 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TunerRouteImport } from './routes/tuner'
 import { Route as SongBuilderRouteImport } from './routes/song-builder'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as LibraryRouteImport } from './routes/library'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GameSongIdRouteImport } from './routes/game.$songId'
 
+const TunerRoute = TunerRouteImport.update({
+  id: '/tuner',
+  path: '/tuner',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SongBuilderRoute = SongBuilderRouteImport.update({
   id: '/song-builder',
   path: '/song-builder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryRoute = LibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -22,40 +47,115 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GameSongIdRoute = GameSongIdRouteImport.update({
+  id: '/game/$songId',
+  path: '/game/$songId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/library': typeof LibraryRoute
+  '/profile': typeof ProfileRoute
   '/song-builder': typeof SongBuilderRoute
+  '/tuner': typeof TunerRoute
+  '/game/$songId': typeof GameSongIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/library': typeof LibraryRoute
+  '/profile': typeof ProfileRoute
   '/song-builder': typeof SongBuilderRoute
+  '/tuner': typeof TunerRoute
+  '/game/$songId': typeof GameSongIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/library': typeof LibraryRoute
+  '/profile': typeof ProfileRoute
   '/song-builder': typeof SongBuilderRoute
+  '/tuner': typeof TunerRoute
+  '/game/$songId': typeof GameSongIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/song-builder'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/library'
+    | '/profile'
+    | '/song-builder'
+    | '/tuner'
+    | '/game/$songId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/song-builder'
-  id: '__root__' | '/' | '/song-builder'
+  to:
+    | '/'
+    | '/auth'
+    | '/library'
+    | '/profile'
+    | '/song-builder'
+    | '/tuner'
+    | '/game/$songId'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/library'
+    | '/profile'
+    | '/song-builder'
+    | '/tuner'
+    | '/game/$songId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
+  LibraryRoute: typeof LibraryRoute
+  ProfileRoute: typeof ProfileRoute
   SongBuilderRoute: typeof SongBuilderRoute
+  TunerRoute: typeof TunerRoute
+  GameSongIdRoute: typeof GameSongIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tuner': {
+      id: '/tuner'
+      path: '/tuner'
+      fullPath: '/tuner'
+      preLoaderRoute: typeof TunerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/song-builder': {
       id: '/song-builder'
       path: '/song-builder'
       fullPath: '/song-builder'
       preLoaderRoute: typeof SongBuilderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library': {
+      id: '/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof LibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -65,12 +165,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/game/$songId': {
+      id: '/game/$songId'
+      path: '/game/$songId'
+      fullPath: '/game/$songId'
+      preLoaderRoute: typeof GameSongIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
+  LibraryRoute: LibraryRoute,
+  ProfileRoute: ProfileRoute,
   SongBuilderRoute: SongBuilderRoute,
+  TunerRoute: TunerRoute,
+  GameSongIdRoute: GameSongIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
