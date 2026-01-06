@@ -15,6 +15,7 @@ interface NoteSystemProps {
   progress: number;
   noteSpeed?: number;
   laneLength?: number;
+  hitZoneZ?: number; // Z position of the hit zone
 }
 
 const MAX_NOTES = 200; // Maximum concurrent notes
@@ -52,6 +53,7 @@ export const NoteSystem: React.FC<NoteSystemProps> = ({
   progress,
   noteSpeed = 5,
   laneLength = 25,
+  hitZoneZ = 8, // Default hit zone position
 }) => {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const glowMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -65,20 +67,17 @@ export const NoteSystem: React.FC<NoteSystemProps> = ({
   const noteGeometry = useMemo(() => createNoteGeometry(), []);
   const glowGeometry = useMemo(() => new THREE.PlaneGeometry(0.8, 0.3), []);
   
-  // Create materials
+  // Create materials for instanced meshes
   const noteMaterial = useMemo(() => {
-    return new THREE.MeshStandardMaterial({
-      metalness: 0.3,
-      roughness: 0.4,
-      emissive: new THREE.Color(0x000000),
-      emissiveIntensity: 0.5,
+    return new THREE.MeshBasicMaterial({
+      color: 0xffffff, // Base color, will be overridden by instanceColor
     });
   }, []);
-  
+
   const glowMaterial = useMemo(() => {
     return new THREE.MeshBasicMaterial({
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.5,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
@@ -87,8 +86,7 @@ export const NoteSystem: React.FC<NoteSystemProps> = ({
   // Convert time to Z position
   const timeToZ = (noteTime: number, currentProgress: number): number => {
     // Notes start at back (negative Z) and move toward camera (positive Z)
-    // The hit zone is at laneLength/2 - 0.5
-    const hitZoneZ = laneLength / 2 - 0.5;
+    // The hit zone Z is passed as a prop
     const secondsPerUnit = 0.5 / noteSpeed; // How many seconds per unit of Z
     const timeDiff = noteTime - currentProgress;
     return hitZoneZ - (timeDiff / secondsPerUnit);
@@ -109,7 +107,8 @@ export const NoteSystem: React.FC<NoteSystemProps> = ({
         const z = timeToZ(note.time, progress);
         
         // Check if note is visible (within lane bounds)
-        const isVisible = z > -laneLength / 2 && z < laneLength / 2 + 2 && !isHit;
+        // Lanes go from Z = -laneLength (back) to Z = hitZoneZ (front)
+        const isVisible = z > -laneLength && z < hitZoneZ + 2 && !isHit;
         
         if (isVisible) {
           // Get X position for this lane
@@ -120,26 +119,38 @@ export const NoteSystem: React.FC<NoteSystemProps> = ({
           tempObject.position.set(x, 0.15, z);
           tempObject.rotation.set(-Math.PI / 2, 0, 0);
           
-          // Pulse effect as note approaches hit zone
-          const hitZoneZ = laneLength / 2 - 0.5;
+          // Enhanced glow effect when note reaches hit zone
           const distToHitZone = Math.abs(z - hitZoneZ);
+          const isAtHitZone = distToHitZone < 0.5; // Note is at hit line
+          
+          // Pulse and scale as note approaches hit zone
           const pulseScale = distToHitZone < 2 ? 1 + (1 - distToHitZone / 2) * 0.2 : 1;
           tempObject.scale.set(pulseScale, pulseScale, 1);
           
           tempObject.updateMatrix();
           meshRef.current.setMatrixAt(i, tempObject.matrix);
           
-          // Set note color
+          // Set note color - brighter when at hit zone
           tempColor.set(color);
-          meshRef.current.setColorAt(i, tempColor);
+          const noteColor = isAtHitZone 
+            ? tempColor.clone().lerp(new THREE.Color(1, 1, 1), 0.3)
+            : tempColor;
+          meshRef.current.setColorAt(i, noteColor);
           
-          // Update glow
+          // Update glow - stronger when at hit zone
           tempObject.position.set(x, 0.05, z);
           tempObject.rotation.set(-Math.PI / 2, 0, 0);
-          tempObject.scale.set(pulseScale * 1.5, pulseScale * 1.5, 1);
+          const glowScale = isAtHitZone ? pulseScale * 2.5 : pulseScale * 1.5;
+          tempObject.scale.set(glowScale, glowScale, 1);
           tempObject.updateMatrix();
           glowMeshRef.current.setMatrixAt(i, tempObject.matrix);
-          glowMeshRef.current.setColorAt(i, tempColor);
+          
+          // Glow color - brighter at hit zone
+          tempColor.set(color);
+          const glowColor = isAtHitZone 
+            ? tempColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5)
+            : tempColor;
+          glowMeshRef.current.setColorAt(i, glowColor);
           
           visibleCount++;
         } else {
@@ -176,13 +187,23 @@ export const NoteSystem: React.FC<NoteSystemProps> = ({
     tempObject.scale.set(0, 0, 0);
     tempObject.updateMatrix();
     
+    // Initialize all colors to white (R3F will create instanceColor automatically)
+    const white = new THREE.Color(1, 1, 1);
     for (let i = 0; i < MAX_NOTES; i++) {
       meshRef.current.setMatrixAt(i, tempObject.matrix);
       glowMeshRef.current.setMatrixAt(i, tempObject.matrix);
+      meshRef.current.setColorAt(i, white);
+      glowMeshRef.current.setColorAt(i, white);
     }
     
     meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) {
+      meshRef.current.instanceColor.needsUpdate = true;
+    }
     glowMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (glowMeshRef.current.instanceColor) {
+      glowMeshRef.current.instanceColor.needsUpdate = true;
+    }
   }, [tempObject]);
 
   return (
@@ -205,6 +226,7 @@ export const NoteSystem: React.FC<NoteSystemProps> = ({
 };
 
 export default NoteSystem;
+
 
 
 

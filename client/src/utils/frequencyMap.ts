@@ -122,6 +122,9 @@ NOTATION_TO_KEY_INDEX.set('7', 15);  // B at position 15
   NOTATION_TO_KEY_INDEX.set(`7${marker}`, 1);   // B°° at position 1
 });
 
+// Total number of kalimba keys/lanes
+export const TOTAL_LANES = 21;
+
 // Generate KALIMBA_KEYS array from data
 export const KALIMBA_KEYS: KalimbaKey[] = KALIMBA_KEY_DATA.map((data, index) => ({
   index,

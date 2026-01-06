@@ -3,7 +3,7 @@
 // ============================================
 
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
+import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type {
   GameState,
   GameScore,
@@ -22,14 +22,14 @@ interface GameStoreState {
   progress: number;
   score: GameScore;
   settings: GameSettings;
-  
+
   // Audio Input
   currentPitch: DetectedPitch | null;
-  
+
   // Active notes (in hit zone)
   activeNotes: SongNote[];
   hitNotes: Set<string>; // IDs of notes that have been hit
-  
+
   // Actions
   startGame: (song: Song) => void;
   pauseGame: () => void;
@@ -82,147 +82,158 @@ const getComboMultiplier = (combo: number): number => {
 };
 
 export const useGameStore = create<GameStoreState>()(
-  subscribeWithSelector((set, get) => ({
-    // Initial State
-    gameState: 'idle',
-    currentSong: null,
-    progress: 0,
-    score: { ...DEFAULT_SCORE },
-    settings: { ...DEFAULT_SETTINGS },
-    currentPitch: null,
-    activeNotes: [],
-    hitNotes: new Set(),
-    
-    // Actions
-    startGame: (song: Song) => {
-      set({
-        gameState: 'countdown',
-        currentSong: song,
-        progress: 0,
-        score: { ...DEFAULT_SCORE },
-        activeNotes: [],
-        hitNotes: new Set(),
-      });
-      
-      // Start countdown, then switch to playing
-      setTimeout(() => {
-        set({ gameState: 'playing' });
-      }, 3000); // 3 second countdown
-    },
-    
-    pauseGame: () => {
-      const { gameState } = get();
-      if (gameState === 'playing') {
-        set({ gameState: 'paused' });
-      }
-    },
-    
-    resumeGame: () => {
-      const { gameState } = get();
-      if (gameState === 'paused') {
-        set({ gameState: 'playing' });
-      }
-    },
-    
-    endGame: () => {
-      set({ gameState: 'finished' });
-    },
-    
-    resetGame: () => {
-      set({
+  subscribeWithSelector(
+    persist(
+      (set, get) => ({
+        // Initial State
         gameState: 'idle',
         currentSong: null,
         progress: 0,
         score: { ...DEFAULT_SCORE },
+        settings: { ...DEFAULT_SETTINGS },
         currentPitch: null,
         activeNotes: [],
         hitNotes: new Set(),
-      });
-    },
-    
-    updateProgress: (time: number) => {
-      const { currentSong, gameState } = get();
-      
-      if (gameState !== 'playing' || !currentSong) return;
-      
-      set({ progress: time });
-      
-      // Check if song is finished
-      if (time >= currentSong.duration) {
-        set({ gameState: 'finished' });
+
+        // Actions
+        startGame: (song: Song) => {
+          set({
+            gameState: 'countdown',
+            currentSong: song,
+            progress: -3, // Start offset (matches LEAD_IN_TIME)
+            score: { ...DEFAULT_SCORE },
+            activeNotes: [],
+            hitNotes: new Set(),
+          });
+
+          // Start countdown, then switch to playing
+          setTimeout(() => {
+            set({ gameState: 'playing' });
+          }, 3000); // 3 second countdown
+        },
+
+        pauseGame: () => {
+          const { gameState } = get();
+          if (gameState === 'playing') {
+            set({ gameState: 'paused' });
+          }
+        },
+
+        resumeGame: () => {
+          const { gameState } = get();
+          if (gameState === 'paused') {
+            set({ gameState: 'playing' });
+          }
+        },
+
+        endGame: () => {
+          set({ gameState: 'finished' });
+        },
+
+        resetGame: () => {
+          set({
+            gameState: 'idle',
+            currentSong: null,
+            progress: 0,
+            score: { ...DEFAULT_SCORE },
+            currentPitch: null,
+            activeNotes: [],
+            hitNotes: new Set(),
+          });
+        },
+
+        updateProgress: (time: number) => {
+          const { currentSong, gameState } = get();
+
+          if (gameState !== 'playing' || !currentSong) return;
+
+          set({ progress: time });
+
+          // Check if song is finished
+          if (time >= currentSong.duration) {
+            set({ gameState: 'finished' });
+          }
+        },
+
+        registerHit: (hit: NoteHit) => {
+          const { score, hitNotes } = get();
+
+          // Don't register if already hit
+          if (hitNotes.has(hit.noteId)) return;
+
+          const newHitNotes = new Set(hitNotes);
+          newHitNotes.add(hit.noteId);
+
+          let newCombo = score.combo;
+          let newMaxCombo = score.maxCombo;
+
+          // Update combo
+          if (hit.accuracy === 'miss') {
+            newCombo = 0;
+          } else {
+            newCombo += 1;
+            newMaxCombo = Math.max(newMaxCombo, newCombo);
+          }
+
+          // Calculate score with combo multiplier
+          const baseScore = SCORE_VALUES[hit.accuracy];
+          const multiplier = getComboMultiplier(newCombo);
+          const scoreGain = Math.round(baseScore * multiplier);
+
+          // Update accuracy counts
+          const newScore: GameScore = {
+            score: score.score + scoreGain,
+            combo: newCombo,
+            maxCombo: newMaxCombo,
+            perfect: score.perfect + (hit.accuracy === 'perfect' ? 1 : 0),
+            good: score.good + (hit.accuracy === 'good' ? 1 : 0),
+            okay: score.okay + (hit.accuracy === 'okay' ? 1 : 0),
+            miss: score.miss + (hit.accuracy === 'miss' ? 1 : 0),
+            accuracy: 0, // Calculate below
+          };
+
+          // Calculate overall accuracy
+          const totalHits = newScore.perfect + newScore.good + newScore.okay + newScore.miss;
+          if (totalHits > 0) {
+            const weightedSum =
+              newScore.perfect * 100 +
+              newScore.good * 75 +
+              newScore.okay * 50;
+            newScore.accuracy = Math.round(weightedSum / totalHits);
+          }
+
+          set({ score: newScore, hitNotes: newHitNotes });
+        },
+
+        setCurrentPitch: (pitch: DetectedPitch | null) => {
+          set({ currentPitch: pitch });
+        },
+
+        updateSettings: (newSettings: Partial<GameSettings>) => {
+          const { settings } = get();
+          set({ settings: { ...settings, ...newSettings } });
+        },
+
+        setActiveNotes: (notes: SongNote[]) => {
+          set({ activeNotes: notes });
+        },
+
+        markNoteAsHit: (noteId: string) => {
+          const { hitNotes } = get();
+          const newHitNotes = new Set(hitNotes);
+          newHitNotes.add(noteId);
+          set({ hitNotes: newHitNotes });
+        },
+      }),
+      {
+        name: 'kalimba-hero-settings',
+        // Only persist settings, not game state
+        partialize: (state) => ({
+          settings: state.settings,
+        }),
       }
-    },
-    
-    registerHit: (hit: NoteHit) => {
-      const { score, hitNotes } = get();
-      
-      // Don't register if already hit
-      if (hitNotes.has(hit.noteId)) return;
-      
-      const newHitNotes = new Set(hitNotes);
-      newHitNotes.add(hit.noteId);
-      
-      let newCombo = score.combo;
-      let newMaxCombo = score.maxCombo;
-      
-      // Update combo
-      if (hit.accuracy === 'miss') {
-        newCombo = 0;
-      } else {
-        newCombo += 1;
-        newMaxCombo = Math.max(newMaxCombo, newCombo);
-      }
-      
-      // Calculate score with combo multiplier
-      const baseScore = SCORE_VALUES[hit.accuracy];
-      const multiplier = getComboMultiplier(newCombo);
-      const scoreGain = Math.round(baseScore * multiplier);
-      
-      // Update accuracy counts
-      const newScore: GameScore = {
-        score: score.score + scoreGain,
-        combo: newCombo,
-        maxCombo: newMaxCombo,
-        perfect: score.perfect + (hit.accuracy === 'perfect' ? 1 : 0),
-        good: score.good + (hit.accuracy === 'good' ? 1 : 0),
-        okay: score.okay + (hit.accuracy === 'okay' ? 1 : 0),
-        miss: score.miss + (hit.accuracy === 'miss' ? 1 : 0),
-        accuracy: 0, // Calculate below
-      };
-      
-      // Calculate overall accuracy
-      const totalHits = newScore.perfect + newScore.good + newScore.okay + newScore.miss;
-      if (totalHits > 0) {
-        const weightedSum = 
-          newScore.perfect * 100 + 
-          newScore.good * 75 + 
-          newScore.okay * 50;
-        newScore.accuracy = Math.round(weightedSum / totalHits);
-      }
-      
-      set({ score: newScore, hitNotes: newHitNotes });
-    },
-    
-    setCurrentPitch: (pitch: DetectedPitch | null) => {
-      set({ currentPitch: pitch });
-    },
-    
-    updateSettings: (newSettings: Partial<GameSettings>) => {
-      const { settings } = get();
-      set({ settings: { ...settings, ...newSettings } });
-    },
-    
-    setActiveNotes: (notes: SongNote[]) => {
-      set({ activeNotes: notes });
-    },
-    
-    markNoteAsHit: (noteId: string) => {
-      const { hitNotes } = get();
-      const newHitNotes = new Set(hitNotes);
-      newHitNotes.add(noteId);
-      set({ hitNotes: newHitNotes });
-    },
-  }))
+    )
+  )
 );
 
 // Selectors for common derived state
@@ -230,6 +241,7 @@ export const selectIsPlaying = (state: GameStoreState) => state.gameState === 'p
 export const selectCanStart = (state: GameStoreState) => state.gameState === 'idle';
 export const selectIsPaused = (state: GameStoreState) => state.gameState === 'paused';
 export const selectIsFinished = (state: GameStoreState) => state.gameState === 'finished';
+
 
 
 

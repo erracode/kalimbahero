@@ -25,10 +25,13 @@ const getNoteLookahead = (noteSpeed: number): number => {
   return 4 - (noteSpeed - 1) * (3 / 9);
 };
 
+// Start offset to give player time to see notes coming (lead-in)
+const START_OFFSET = 3.0;
+
 // Calculate hit window based on timing (in ms)
 const getHitAccuracy = (timeDelta: number, hitWindow: number): HitAccuracy => {
   const absTime = Math.abs(timeDelta);
-  
+
   if (absTime <= hitWindow * 0.3) return 'perfect';
   if (absTime <= hitWindow * 0.6) return 'good';
   if (absTime <= hitWindow) return 'okay';
@@ -40,7 +43,7 @@ export const useGameLoop = (
   options: UseGameLoopOptions = {}
 ): UseGameLoopReturn => {
   const { onNoteHit, onNoteMiss } = options;
-  
+
   const {
     gameState,
     currentSong,
@@ -51,34 +54,34 @@ export const useGameLoop = (
     registerHit,
     setActiveNotes,
   } = useGameStore();
-  
+
   const startTimeRef = useRef<number | null>(null);
   const pausedTimeRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
   const lastPitchRef = useRef<DetectedPitch | null>(null);
   const processedMissesRef = useRef<Set<string>>(new Set());
-  
+
   // Get visible notes based on current progress
   const getVisibleNotes = useCallback((): SongNote[] => {
     if (!currentSong) return [];
-    
+
     const lookahead = getNoteLookahead(settings.noteSpeed);
     const startTime = progress;
     const endTime = progress + lookahead;
-    
-    return currentSong.notes.filter(note => 
+
+    return currentSong.notes.filter(note =>
       note.time >= startTime - 0.5 && // Small buffer for notes leaving
       note.time <= endTime &&
       !hitNotes.has(note.id)
     );
   }, [currentSong, progress, settings.noteSpeed, hitNotes]);
-  
+
   // Get notes currently in the hit zone
   const getHitZoneNotes = useCallback((): SongNote[] => {
     if (!currentSong) return [];
-    
+
     const hitWindowSec = settings.hitWindow / 1000;
-    
+
     return currentSong.notes.filter(note => {
       const timeDiff = note.time - progress;
       return (
@@ -87,38 +90,38 @@ export const useGameLoop = (
       );
     });
   }, [currentSong, progress, settings.hitWindow, hitNotes]);
-  
+
   // Check for pitch matches with notes in hit zone
   const checkPitchMatch = useCallback((pitch: DetectedPitch) => {
     if (!currentSong || gameState !== 'playing') return;
-    
+
     const hitZoneNotes = getHitZoneNotes();
-    
+
     for (const note of hitZoneNotes) {
       if (hitNotes.has(note.id)) continue;
-      
+
       // Get expected frequency for this note
       const expectedKey = KALIMBA_KEYS[note.keyIndex];
       if (!expectedKey) continue;
-      
+
       // Check if detected pitch matches the expected note
       const centsDiff = 1200 * Math.log2(pitch.frequency / expectedKey.frequency);
-      
+
       if (Math.abs(centsDiff) <= settings.pitchTolerance) {
         // We have a match!
         const timeDelta = (note.time - progress) * 1000; // Convert to ms
         const accuracy = getHitAccuracy(timeDelta, settings.hitWindow);
-        
+
         const hit: NoteHit = {
           noteId: note.id,
           accuracy,
           timeDelta,
           centsDelta: centsDiff,
         };
-        
+
         registerHit(hit);
         onNoteHit?.(hit);
-        
+
         // Only process one note per pitch detection
         break;
       }
@@ -134,59 +137,59 @@ export const useGameLoop = (
     registerHit,
     onNoteHit,
   ]);
-  
+
   // Check for missed notes
   const checkMissedNotes = useCallback(() => {
     if (!currentSong || gameState !== 'playing') return;
-    
+
     const missWindowSec = settings.hitWindow / 1000;
-    
+
     currentSong.notes.forEach(note => {
       // Skip if already hit or already processed as miss
       if (hitNotes.has(note.id) || processedMissesRef.current.has(note.id)) return;
-      
+
       // Check if note has passed the hit zone
       const timeDiff = progress - note.time;
-      
+
       if (timeDiff > missWindowSec) {
         // Note was missed
         processedMissesRef.current.add(note.id);
-        
+
         const hit: NoteHit = {
           noteId: note.id,
           accuracy: 'miss',
           timeDelta: timeDiff * 1000,
           centsDelta: 0,
         };
-        
+
         registerHit(hit);
         onNoteMiss?.(note);
       }
     });
   }, [currentSong, gameState, hitNotes, settings.hitWindow, progress, registerHit, onNoteMiss]);
-  
+
   // Main game loop
   const gameLoop = useCallback((timestamp: number) => {
     if (gameState !== 'playing') return;
-    
+
     if (startTimeRef.current === null) {
-      startTimeRef.current = timestamp - pausedTimeRef.current * 1000;
+      startTimeRef.current = timestamp - (pausedTimeRef.current + START_OFFSET) * 1000;
     }
-    
+
     // Calculate current progress in seconds
     const elapsed = (timestamp - startTimeRef.current) / 1000;
-    updateProgress(elapsed);
-    
+    updateProgress(elapsed - START_OFFSET);
+
     // Check for missed notes
     checkMissedNotes();
-    
+
     // Update active notes for UI
     setActiveNotes(getHitZoneNotes());
-    
+
     // Continue loop
     animationFrameRef.current = requestAnimationFrame(gameLoop);
   }, [gameState, updateProgress, checkMissedNotes, setActiveNotes, getHitZoneNotes]);
-  
+
   // Handle pitch changes
   useEffect(() => {
     if (currentPitch && currentPitch !== lastPitchRef.current) {
@@ -194,7 +197,7 @@ export const useGameLoop = (
       checkPitchMatch(currentPitch);
     }
   }, [currentPitch, checkPitchMatch]);
-  
+
   // Start/stop game loop based on state
   useEffect(() => {
     if (gameState === 'playing') {
@@ -217,23 +220,23 @@ export const useGameLoop = (
         animationFrameRef.current = null;
       }
       startTimeRef.current = null;
-      pausedTimeRef.current = 0;
+      pausedTimeRef.current = -START_OFFSET;
     }
-    
+
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
   }, [gameState, gameLoop, progress]);
-  
+
   // Reset when song changes
   useEffect(() => {
     startTimeRef.current = null;
-    pausedTimeRef.current = 0;
+    pausedTimeRef.current = -START_OFFSET;
     processedMissesRef.current.clear();
   }, [currentSong]);
-  
+
   return {
     visibleNotes: getVisibleNotes(),
     hitZoneNotes: getHitZoneNotes(),
@@ -242,6 +245,7 @@ export const useGameLoop = (
 };
 
 export default useGameLoop;
+
 
 
 

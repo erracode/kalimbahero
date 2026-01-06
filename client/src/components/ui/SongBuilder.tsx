@@ -2,11 +2,21 @@
 // Kalimba Hero - Song Builder Component
 // ============================================
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText } from 'lucide-react';
 import { GlassPanel } from './GlassPanel';
 import { NeonButton } from './NeonButton';
+import { ToggleButton } from './ToggleButton';
+import { IconButton } from './IconButton';
+import { Input } from './input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './select';
 import { ChartEditor } from './ChartEditor';
 import { 
   createSongFromNotation, 
@@ -15,7 +25,7 @@ import {
   notesToNotation,
 } from '@/utils/songParser';
 import { KALIMBA_KEYS } from '@/utils/frequencyMap';
-import type { Song, SongNote } from '@/types/game';
+import type { Song, SongNote, Difficulty, TimeSignature } from '@/types/game';
 
 interface SongBuilderProps {
   onBack: () => void;
@@ -41,7 +51,7 @@ const COLORS = [
   '#9B59B6', '#FF8E53', '#E91E63', '#4D96FF',
 ];
 
-const DIFFICULTIES: Song['difficulty'][] = ['easy', 'medium', 'hard', 'expert'];
+const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'expert'];
 
 // Generate unique ID
 const generateId = () => `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -56,7 +66,10 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   const [title, setTitle] = useState(initialSong?.title || '');
   const [artist, setArtist] = useState(initialSong?.artist || '');
   const [bpm, setBpm] = useState(initialSong?.bpm || 120);
-  const [difficulty, setDifficulty] = useState<Song['difficulty']>(
+  const [timeSignature, setTimeSignature] = useState<TimeSignature>(
+    initialSong?.timeSignature || '4/4'
+  );
+  const [difficulty, setDifficulty] = useState<Difficulty>(
     initialSong?.difficulty || 'medium'
   );
   const [icon, setIcon] = useState(initialSong?.icon || 'music');
@@ -67,32 +80,75 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   const [jsonOutput, setJsonOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
+  
+  // Sync all state when initialSong changes (e.g., when editing a different song)
+  useEffect(() => {
+    if (initialSong) {
+      setTitle(initialSong.title);
+      setArtist(initialSong.artist);
+      setBpm(initialSong.bpm);
+      setDifficulty(initialSong.difficulty);
+      setIcon(initialSong.icon || 'music');
+      setIconColor(initialSong.iconColor || '#00E5FF');
+      setNotation(initialSong.notation || '');
+      setNotes(initialSong.notes || []);
+      setDuration(initialSong.duration || 30);
+      setTimeSignature(initialSong.timeSignature || '4/4');
+      setError(null);
+      setJsonOutput('');
+    } else {
+      // Reset to defaults for new song
+      setTitle('');
+      setArtist('');
+      setBpm(120);
+      setTimeSignature('4/4');
+      setDifficulty('medium');
+      setIcon('music');
+      setIconColor('#00E5FF');
+      setNotation('');
+      setNotes([]);
+      setDuration(30);
+      setError(null);
+      setJsonOutput('');
+    }
+  }, [initialSong]);
 
   // Sync notes from notation when switching to chart mode
   const handleModeChange = useCallback((mode: EditorMode) => {
-    if (mode === 'chart' && notation.trim()) {
-      try {
-        const song = createSongFromNotation(notation, {
-          title: title.trim() || 'Untitled',
-          artist: artist.trim() || 'Unknown',
-          bpm,
-          difficulty,
-          icon,
-          iconColor,
-        });
-        setNotes(song.notes);
-        setDuration(song.duration);
-        setError(null);
-      } catch (err) {
-        // Keep existing notes if parsing fails
+    // Always allow mode change, but sync data if available
+    if (mode === 'chart') {
+      // When switching to chart mode, try to sync from notation if available
+      if (notation.trim()) {
+        try {
+          const song = createSongFromNotation(notation, {
+            title: title.trim() || 'Untitled',
+            artist: artist.trim() || 'Unknown',
+            bpm,
+            timeSignature,
+            difficulty,
+            icon,
+            iconColor,
+          });
+          setNotes(song.notes);
+          setDuration(song.duration);
+          setError(null);
+        } catch (err) {
+          // Keep existing notes if parsing fails - don't prevent mode change
+          console.error('Failed to parse notation:', err);
+        }
       }
-    } else if (mode === 'text' && notes.length > 0) {
-      // Convert notes back to notation
-      const newNotation = notesToNotation(notes, bpm);
+      // Always change mode, even if no notation
+      setEditorMode(mode);
+    } else if (mode === 'text') {
+      // When switching to text mode, always convert notes to notation (even if empty)
+      const newNotation = notes.length > 0 
+        ? notesToNotation(notes, bpm, timeSignature)
+        : '';
       setNotation(newNotation);
+      // Always change mode
+      setEditorMode(mode);
     }
-    setEditorMode(mode);
-  }, [notation, notes, title, artist, bpm, difficulty, icon, iconColor]);
+  }, [notation, notes, title, artist, bpm, timeSignature, difficulty, icon, iconColor]);
 
   // Generate song from current inputs
   const generateSong = useCallback((): Song | null => {
@@ -117,6 +173,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
           title: title.trim(),
           artist: artist.trim() || 'Unknown',
           bpm,
+          timeSignature,
           difficulty,
           icon,
           iconColor,
@@ -135,7 +192,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       
       songNotes = notes;
       songDuration = Math.max(duration, ...notes.map(n => n.time + n.duration)) + 2;
-      songNotation = notesToNotation(notes, bpm);
+      songNotation = notesToNotation(notes, bpm, timeSignature);
     }
     
     const song: Song = {
@@ -143,6 +200,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       title: title.trim(),
       artist: artist.trim() || 'Unknown',
       bpm,
+      timeSignature,
       difficulty,
       icon,
       iconColor,
@@ -153,7 +211,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
     
     setError(null);
     return song;
-  }, [title, artist, bpm, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong]);
+  }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong]);
 
   // Handle test play
   const handleTestPlay = () => {
@@ -234,41 +292,35 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         
         {/* Editor Mode Toggle */}
         <div className="flex items-center gap-2 bg-white/5 rounded-xl p-1 border border-white/10">
-          <button
+          <ToggleButton
+            active={editorMode === 'chart'}
+            variant="primary"
+            size="md"
+            icon={<Grid className="w-4 h-4" />}
             onClick={() => handleModeChange('chart')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-              editorMode === 'chart'
-                ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-lg'
-                : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-            }`}
           >
-            <Grid className="w-4 h-4" />
             Visual Editor
-          </button>
-          <button
+          </ToggleButton>
+          <ToggleButton
+            active={editorMode === 'text'}
+            variant="secondary"
+            size="md"
+            icon={<FileText className="w-4 h-4" />}
             onClick={() => handleModeChange('text')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-              editorMode === 'text'
-                ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg'
-                : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-            }`}
           >
-            <FileText className="w-4 h-4" />
             Tab Notation
-          </button>
+          </ToggleButton>
         </div>
         
         {/* Action buttons */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className={`p-2 rounded-lg transition-colors ${
-              showSettings ? 'bg-white/20 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
-            }`}
+          <IconButton
+            variant={showSettings ? 'default' : 'ghost'}
+            size="md"
+            icon={<Edit3 className="w-5 h-5" />}
             title="Toggle settings"
-          >
-            <Edit3 className="w-5 h-5" />
-          </button>
+            onClick={() => setShowSettings(!showSettings)}
+          />
           
           <NeonButton
             variant="cyan"
@@ -307,42 +359,46 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                 {/* Title */}
                 <div>
                   <label className="block text-sm text-white/60 mb-1">Title</label>
-                  <input
+                  <Input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="My Awesome Song"
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-cyan-500 transition-colors text-sm"
+                    className="w-full bg-white/10 border-white/20 text-white placeholder-white/30 focus:border-cyan-500"
                   />
                 </div>
 
                 {/* Artist */}
                 <div>
                   <label className="block text-sm text-white/60 mb-1">Artist</label>
-                  <input
+                  <Input
                     type="text"
                     value={artist}
                     onChange={(e) => setArtist(e.target.value)}
                     placeholder="Artist Name"
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-cyan-500 transition-colors text-sm"
+                    className="w-full bg-white/10 border-white/20 text-white placeholder-white/30 focus:border-cyan-500"
                   />
                 </div>
 
-                {/* BPM */}
+                {/* Time Signature */}
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">BPM: {bpm}</label>
-                  <input
-                    type="range"
-                    min="30"
-                    max="200"
-                    value={bpm}
-                    onChange={(e) => setBpm(Number(e.target.value))}
-                    className="w-full accent-cyan-500"
-                  />
-                  <div className="flex justify-between text-xs text-white/40 mt-1">
-                    <span>30</span>
-                    <span>200</span>
-                  </div>
+                  <label className="block text-sm text-white/60 mb-1">Time Signature</label>
+                  <Select
+                    value={timeSignature}
+                    onValueChange={(value) => setTimeSignature(value as TimeSignature)}
+                  >
+                    <SelectTrigger className="w-full bg-white/10 border-white/20 text-white focus:border-cyan-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-white/20">
+                      <SelectItem value="4/4" className="text-white hover:bg-white/10 cursor-pointer">4/4</SelectItem>
+                      <SelectItem value="3/4" className="text-white hover:bg-white/10 cursor-pointer">3/4</SelectItem>
+                      <SelectItem value="2/4" className="text-white hover:bg-white/10 cursor-pointer">2/4</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-white/40 mt-1">
+                    Determines grid divisions ({timeSignature.split('/')[0]} beats per measure)
+                  </p>
                 </div>
 
                 {/* Difficulty */}
@@ -350,17 +406,15 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                   <label className="block text-sm text-white/60 mb-1">Difficulty</label>
                   <div className="flex gap-1 flex-wrap">
                     {DIFFICULTIES.map((diff) => (
-                      <button
+                      <ToggleButton
                         key={diff}
+                        active={difficulty === diff}
+                        variant="default"
+                        size="sm"
                         onClick={() => setDifficulty(diff)}
-                        className={`px-2 py-1 rounded text-xs capitalize transition-all ${
-                          difficulty === diff
-                            ? 'bg-cyan-500 text-white'
-                            : 'bg-white/10 text-white/60 hover:bg-white/20'
-                        }`}
                       >
                         {diff}
-                      </button>
+                      </ToggleButton>
                     ))}
                   </div>
                 </div>
@@ -373,7 +427,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                       <button
                         key={i.id}
                         onClick={() => setIcon(i.id)}
-                        className={`w-8 h-8 rounded text-lg flex items-center justify-center transition-all ${
+                        className={`w-8 h-8 rounded text-lg flex items-center justify-center transition-all cursor-pointer ${
                           icon === i.id
                             ? 'bg-white/20 ring-2 ring-cyan-500'
                             : 'bg-white/10 hover:bg-white/20'
@@ -393,7 +447,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                       <button
                         key={color}
                         onClick={() => setIconColor(color)}
-                        className={`w-6 h-6 rounded-full transition-all ${
+                        className={`w-6 h-6 rounded-full transition-all cursor-pointer ${
                           iconColor === color ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900' : ''
                         }`}
                         style={{ backgroundColor: color }}
@@ -419,28 +473,28 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-white/60">Import/Export</span>
                     <div className="flex gap-1">
-                      <button
-                        onClick={handleGenerateJSON}
-                        className="p-1.5 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                      <IconButton
+                        variant="default"
+                        size="sm"
+                        icon={<RefreshCw className="w-4 h-4" />}
                         title="Generate JSON"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={handleLoadJSON}
-                        className="p-1.5 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                        onClick={handleGenerateJSON}
+                      />
+                      <IconButton
+                        variant="default"
+                        size="sm"
+                        icon={<Upload className="w-4 h-4" />}
                         title="Load JSON"
-                      >
-                        <Upload className="w-4 h-4" />
-                      </button>
+                        onClick={handleLoadJSON}
+                      />
                       {jsonOutput && (
-                        <button
-                          onClick={handleCopyJSON}
-                          className="p-1.5 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                        <IconButton
+                          variant="default"
+                          size="sm"
+                          icon={<Download className="w-4 h-4" />}
                           title="Copy JSON"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
+                          onClick={handleCopyJSON}
+                        />
                       )}
                     </div>
                   </div>
@@ -469,9 +523,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
             <ChartEditor
               notes={notes}
               bpm={bpm}
+              timeSignature={timeSignature}
               duration={duration}
               onNotesChange={setNotes}
               onDurationChange={setDuration}
+              onBpmChange={setBpm}
+              onTimeSignatureChange={setTimeSignature}
             />
           ) : (
             <div className="h-full flex flex-col p-4">

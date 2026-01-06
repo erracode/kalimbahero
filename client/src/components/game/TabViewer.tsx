@@ -11,6 +11,7 @@ import type { Song, SongNote } from '@/types/game';
 import { getKeyColor, getKeyDisplayLabel } from '@/utils/frequencyMap';
 import { NeonButton } from '@/components/ui/NeonButton';
 import { GlassPanel } from '@/components/ui/GlassPanel';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface TabViewerProps {
   song: Song;
@@ -18,24 +19,24 @@ interface TabViewerProps {
 }
 
 // Single note display component
-const TabNote = ({ 
-  note, 
+const TabNote = ({
+  note,
   isHighlighted,
-}: { 
+}: {
   note: SongNote;
   isHighlighted: boolean;
 }) => {
   const label = getKeyDisplayLabel(note.keyIndex);
   const color = getKeyColor(note.keyIndex);
-  
+
   // Parse the degree to get number and markers
   const degreeMatch = label.degree.match(/^(\d)([°*']*)$/);
   const number = degreeMatch ? degreeMatch[1] : label.degree;
   const markers = degreeMatch ? degreeMatch[2] : '';
-  
+
   // Count octave markers
   const dotCount = (markers.match(/[°*']/g) || []).length;
-  
+
   return (
     <div
       className={`
@@ -46,8 +47,8 @@ const TabNote = ({
       `}
       style={{
         backgroundColor: isHighlighted ? color : `${color}30`,
-        boxShadow: isHighlighted 
-          ? `0 0 25px ${color}, 0 0 50px ${color}60` 
+        boxShadow: isHighlighted
+          ? `0 0 25px ${color}, 0 0 50px ${color}60`
           : `0 4px 15px ${color}20`,
         border: `2px solid ${isHighlighted ? '#fff' : color}50`,
       }}
@@ -56,10 +57,10 @@ const TabNote = ({
       {dotCount > 0 && (
         <div className="absolute -top-2 flex gap-1">
           {Array(dotCount).fill(0).map((_, i) => (
-            <div 
+            <div
               key={i}
               className="w-2 h-2 rounded-full"
-              style={{ 
+              style={{
                 backgroundColor: isHighlighted ? '#fff' : color,
                 boxShadow: `0 0 6px ${color}`,
               }}
@@ -67,20 +68,20 @@ const TabNote = ({
           ))}
         </div>
       )}
-      
+
       {/* The number */}
-      <span 
+      <span
         className="text-2xl font-black"
-        style={{ 
+        style={{
           color: isHighlighted ? '#fff' : color,
           textShadow: isHighlighted ? '0 2px 4px rgba(0,0,0,0.5)' : 'none',
         }}
       >
         {number}
       </span>
-      
+
       {/* Note letter small below */}
-      <span 
+      <span
         className="text-[10px] font-medium"
         style={{ color: isHighlighted ? 'rgba(255,255,255,0.8)' : `${color}99` }}
       >
@@ -131,20 +132,21 @@ export const TabViewer: React.FC<TabViewerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(30); // pixels per second
+  const [autoScroll, setAutoScroll] = useState(true); // Auto scroll enabled by default
   const scrollSpeedRef = useRef(scrollSpeed); // Ref to track current speed
   const animationFrameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const accumulatedScrollRef = useRef<number>(0); // Accumulate fractional pixels
-  
+
   // Keep ref in sync with state
   useEffect(() => {
     scrollSpeedRef.current = scrollSpeed;
   }, [scrollSpeed]);
-  
+
   // Group notes by time (for chords) and organize into items
   const { items, lines } = useMemo(() => {
     const grouped = new Map<number, SongNote[]>();
-    
+
     song.notes.forEach(note => {
       const timeKey = Math.round(note.time * 100) / 100; // Round to 10ms
       if (!grouped.has(timeKey)) {
@@ -152,7 +154,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
       }
       grouped.get(timeKey)!.push(note);
     });
-    
+
     // Sort by time and create items
     const sortedTimes = Array.from(grouped.keys()).sort((a, b) => a - b);
     const items = sortedTimes.map((time, index) => ({
@@ -160,34 +162,34 @@ export const TabViewer: React.FC<TabViewerProps> = ({
       notes: grouped.get(time)!,
       index,
     }));
-    
+
     // Create lines (about 6-8 notes per line)
     const notesPerLine = 7;
     const lines: typeof items[] = [];
-    
+
     for (let i = 0; i < items.length; i += notesPerLine) {
       lines.push(items.slice(i, i + notesPerLine));
     }
-    
+
     return { items, lines };
   }, [song.notes]);
-  
+
   // Calculate beat duration from BPM
   const beatDuration = 60 / song.bpm;
-  
+
   // Animation frame based scroll (uses ref for always-current speed)
   const animate = useCallback((currentTime: number) => {
     if (!lastTimeRef.current) {
       lastTimeRef.current = currentTime;
     }
-    
+
     const deltaTime = (currentTime - lastTimeRef.current) / 1000; // Convert to seconds
     lastTimeRef.current = currentTime;
-    
+
     if (containerRef.current) {
       // Accumulate fractional pixels to handle low speeds properly
       accumulatedScrollRef.current += scrollSpeedRef.current * deltaTime;
-      
+
       // Only scroll when we have at least 1 pixel accumulated
       if (accumulatedScrollRef.current >= 1) {
         const pixelsToScroll = Math.floor(accumulatedScrollRef.current);
@@ -195,13 +197,13 @@ export const TabViewer: React.FC<TabViewerProps> = ({
         accumulatedScrollRef.current -= pixelsToScroll;
       }
     }
-    
+
     animationFrameRef.current = requestAnimationFrame(animate);
   }, []);
-  
-  // Start/stop animation based on isPlaying
+
+  // Start/stop animation based on isPlaying and autoScroll
   useEffect(() => {
-    if (isPlaying) {
+    if (isPlaying && autoScroll) {
       lastTimeRef.current = 0;
       accumulatedScrollRef.current = 0; // Reset accumulator
       animationFrameRef.current = requestAnimationFrame(animate);
@@ -209,14 +211,14 @@ export const TabViewer: React.FC<TabViewerProps> = ({
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
-    
+
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, animate]);
-  
+  }, [isPlaying, autoScroll, animate]);
+
   // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -242,20 +244,20 @@ export const TabViewer: React.FC<TabViewerProps> = ({
         setIsPlaying(false);
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onBack]);
-  
+
   const handleReset = () => {
     if (containerRef.current) {
       containerRef.current.scrollTop = 0;
     }
     setIsPlaying(false);
   };
-  
+
   return (
-    <motion.div 
+    <motion.div
       className="fixed inset-0 z-50 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 overflow-hidden"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -273,17 +275,29 @@ export const TabViewer: React.FC<TabViewerProps> = ({
             >
               Back
             </NeonButton>
-            
+
             <div className="hidden sm:block">
               <h1 className="text-xl font-black text-white truncate">{song.title}</h1>
               <p className="text-white/50 text-sm">{song.artist} • {song.bpm} BPM</p>
             </div>
           </div>
-          
+
           {/* Controls - Flex row */}
           <div className="flex items-center gap-2 flex-1 justify-end">
+            {/* Auto Scroll Toggle */}
+            <GlassPanel padding="sm" className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={autoScroll}
+                  onCheckedChange={(checked) => setAutoScroll(checked === true)}
+                  className="border-white/30 bg-white/10 text-cyan-500 data-[state=checked]:bg-cyan-500 data-[state=checked]:text-black"
+                />
+                <span className="text-white/60 text-sm">Auto Scroll</span>
+              </label>
+            </GlassPanel>
+
             {/* Speed Slider */}
-            <GlassPanel padding="sm" className="flex items-center gap-3">
+            <GlassPanel padding="sm" className={`flex items-center gap-3 ${!autoScroll ? 'opacity-50' : ''}`}>
               <span className="text-white/60 text-sm hidden md:block">Speed:</span>
               <input
                 type="range"
@@ -292,11 +306,12 @@ export const TabViewer: React.FC<TabViewerProps> = ({
                 step="10"
                 value={scrollSpeed}
                 onChange={(e) => setScrollSpeed(Number(e.target.value))}
-                className="w-24 md:w-32 h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                disabled={!autoScroll}
+                className="w-24 md:w-32 h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-cyan-500 disabled:cursor-not-allowed"
               />
               <span className="text-white font-mono text-sm w-12">{scrollSpeed}</span>
             </GlassPanel>
-            
+
             {/* Play/Pause */}
             <NeonButton
               variant={isPlaying ? 'orange' : 'cyan'}
@@ -306,7 +321,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
             >
               <span className="hidden sm:inline">{isPlaying ? 'Pause' : 'Play'}</span>
             </NeonButton>
-            
+
             {/* Reset */}
             <NeonButton
               variant="red"
@@ -319,9 +334,9 @@ export const TabViewer: React.FC<TabViewerProps> = ({
           </div>
         </div>
       </div>
-      
+
       {/* Tab content */}
-      <div 
+      <div
         ref={containerRef}
         className="h-full pt-28 pb-40 px-4 overflow-y-auto scroll-smooth"
       >
@@ -339,7 +354,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
               <span>{song.notes.length} notes</span>
             </div>
           </div>
-          
+
           {/* Lines of notation */}
           {lines.map((line, lineIndex) => (
             <div
@@ -350,7 +365,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
               <div className="text-xs text-white/30 mb-4 font-mono">
                 Line {lineIndex + 1} of {lines.length}
               </div>
-              
+
               {/* Notes in this line */}
               <div className="flex flex-wrap gap-3 items-center">
                 {line.map((item, itemIndex) => {
@@ -359,11 +374,11 @@ export const TabViewer: React.FC<TabViewerProps> = ({
                   const gap = item.time - prevTime;
                   const showRest = gap > beatDuration * 1.5 && itemIndex > 0;
                   const restBeats = Math.round(gap / beatDuration);
-                  
+
                   return (
                     <div key={item.time} className="flex items-center gap-3">
                       {showRest && <RestDisplay beats={restBeats} />}
-                      
+
                       {item.notes.length > 1 ? (
                         <ChordDisplay
                           notes={item.notes}
@@ -381,7 +396,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
               </div>
             </div>
           ))}
-          
+
           {/* End marker */}
           <div className="text-center py-16">
             <div className="text-white/20 text-6xl mb-4">🎵</div>
@@ -389,7 +404,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
           </div>
         </div>
       </div>
-      
+
       {/* Bottom info bar */}
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-black/40 backdrop-blur-md z-20 border-t border-white/10">
         <div className="max-w-5xl mx-auto">
@@ -412,7 +427,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
               <span>Back</span>
             </div>
           </div>
-          
+
           {/* Notation legend */}
           <div className="flex items-center justify-center gap-6 text-xs text-white/30 mt-3 flex-wrap">
             <div className="flex items-center gap-1">
@@ -436,7 +451,7 @@ export const TabViewer: React.FC<TabViewerProps> = ({
           </div>
         </div>
       </div>
-      
+
       {/* Playing indicator */}
       <AnimatePresence>
         {isPlaying && (

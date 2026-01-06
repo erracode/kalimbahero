@@ -2,6 +2,12 @@
 // Kalimba Hero - Type Definitions
 // ============================================
 
+// Difficulty levels
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert';
+
+// Time signature
+export type TimeSignature = '4/4' | '3/4' | '2/4';
+
 // Individual kalimba key configuration
 export interface KalimbaKey {
   index: number;
@@ -29,10 +35,12 @@ export interface LaneConfig {
 export interface SongNote {
   id?: string;            // Unique identifier
   keyIndex: number;
-  scaleDegree: number;
-  octaveMarker: string;
+  scaleDegree?: number;   // Optional - set by some parsers
+  octaveMarker?: string;  // Optional - set by some parsers
   time: number;           // seconds from start
   duration?: number;      // hold duration
+  note?: string;          // Note name
+  frequency?: number;     // Note frequency
   isChord?: boolean;      // part of a chord
   chordGroup?: number;    // which chord this belongs to
 }
@@ -43,12 +51,15 @@ export interface Song {
   title: string;
   artist: string;
   bpm: number;
-  difficulty: 1 | 2 | 3 | 4 | 5;
+  timeSignature?: TimeSignature;  // Time signature for grid division
+  difficulty: Difficulty | 1 | 2 | 3 | 4 | 5;
   duration: number;       // seconds
   notes: SongNote[];
   icon?: string;
+  iconColor?: string;
   color?: string;
   notation?: string;      // original notation string
+  createdAt?: number;     // timestamp
 }
 
 // Real-time pitch detection result
@@ -94,7 +105,7 @@ export interface NoteHit {
 }
 
 // Game state machine
-export type GameState = 
+export type GameState =
   | 'idle'
   | 'countdown'
   | 'playing'

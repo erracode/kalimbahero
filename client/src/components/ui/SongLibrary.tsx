@@ -4,9 +4,11 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Trash2, Plus, ArrowLeft, Star, Music, Snowflake, Sword, Heart, Bell, Zap, Gamepad2, FileText } from 'lucide-react';
+import { Play, Trash2, Plus, ArrowLeft, Star, Music, Snowflake, Sword, Heart, Bell, Zap, Gamepad2, FileText, Edit2 } from 'lucide-react';
 import { GlassPanel } from './GlassPanel';
 import { NeonButton } from './NeonButton';
+import { ToggleButton } from './ToggleButton';
+import { IconButton } from './IconButton';
 import type { Song } from '@/types/game';
 
 type GameMode = '3d' | 'tab';
@@ -14,6 +16,7 @@ type GameMode = '3d' | 'tab';
 interface SongLibraryProps {
   songs: Song[];
   onSelectSong: (song: Song) => void;
+  onEditSong?: (song: Song) => void;
   onDeleteSong?: (songId: string) => void;
   onCreateNew?: () => void;
   onBack: () => void;
@@ -43,11 +46,12 @@ const difficultyColors: Record<string, string> = {
 interface SongCardProps {
   song: Song;
   onPlay: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
   index: number;
 }
 
-const SongCard: React.FC<SongCardProps> = ({ song, onPlay, onDelete, index }) => {
+const SongCard: React.FC<SongCardProps> = ({ song, onPlay, onEdit, onDelete, index }) => {
   const icon = iconMap[song.icon || 'music'] || <Music className="w-8 h-8" />;
   const iconColor = song.iconColor || '#00E5FF';
   const diffColor = difficultyColors[song.difficulty] || '#00E5FF';
@@ -122,18 +126,30 @@ const SongCard: React.FC<SongCardProps> = ({ song, onPlay, onDelete, index }) =>
             Play
           </NeonButton>
           
+          {onEdit && (
+            <IconButton
+              variant="primary"
+              size="md"
+              icon={<Edit2 className="w-4 h-4" />}
+              title="Edit song"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+            />
+          )}
+          
           {onDelete && (
-            <motion.button
-              className="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+            <IconButton
+              variant="danger"
+              size="md"
+              icon={<Trash2 className="w-4 h-4" />}
+              title="Delete song"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete();
               }}
-            >
-              <Trash2 className="w-4 h-4" />
-            </motion.button>
+            />
           )}
         </div>
       </GlassPanel>
@@ -144,6 +160,7 @@ const SongCard: React.FC<SongCardProps> = ({ song, onPlay, onDelete, index }) =>
 export const SongLibrary: React.FC<SongLibraryProps> = ({
   songs,
   onSelectSong,
+  onEditSong,
   onDeleteSong,
   onCreateNew,
   onBack,
@@ -185,28 +202,24 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             {/* Game Mode Toggle - Flex Switch */}
             {onGameModeChange && (
               <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm rounded-xl p-1 border border-white/10">
-                <button
+                <ToggleButton
+                  active={gameMode === '3d'}
+                  variant="primary"
+                  size="md"
+                  icon={<Gamepad2 className="w-4 h-4" />}
                   onClick={() => onGameModeChange('3d')}
-                  className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                    gameMode === '3d'
-                      ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-lg shadow-cyan-500/30'
-                      : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-                  }`}
                 >
-                  <Gamepad2 className="w-4 h-4" />
-                  <span>3D Game</span>
-                </button>
-                <button
+                  Play Mode
+                </ToggleButton>
+                <ToggleButton
+                  active={gameMode === 'tab'}
+                  variant="secondary"
+                  size="md"
+                  icon={<FileText className="w-4 h-4" />}
                   onClick={() => onGameModeChange('tab')}
-                  className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                    gameMode === 'tab'
-                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-500/30'
-                      : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-                  }`}
                 >
-                  <FileText className="w-4 h-4" />
-                  <span>Tab Practice</span>
-                </button>
+                  Practice Mode
+                </ToggleButton>
               </div>
             )}
             
@@ -225,17 +238,15 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         {/* Filter tabs */}
         <div className="flex gap-2 mt-6 flex-wrap">
           {['all', 'easy', 'medium', 'hard', 'expert'].map((diff) => (
-            <button
+            <ToggleButton
               key={diff}
+              active={filter === diff}
+              variant="default"
+              size="md"
               onClick={() => setFilter(diff)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                filter === diff
-                  ? 'bg-white/20 text-white'
-                  : 'bg-white/5 text-white/50 hover:bg-white/10'
-              }`}
             >
               {diff.charAt(0).toUpperCase() + diff.slice(1)}
-            </button>
+            </ToggleButton>
           ))}
         </div>
       </div>
@@ -254,6 +265,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   song={song}
                   index={index}
                   onPlay={() => onSelectSong(song)}
+                  onEdit={onEditSong ? () => onEditSong(song) : undefined}
                   onDelete={onDeleteSong ? () => onDeleteSong(song.id) : undefined}
                 />
               ))}

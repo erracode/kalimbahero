@@ -25,7 +25,7 @@ export const initKalimbaAudio = async (): Promise<void> => {
       envelope: {
         attack: 0.01,
         decay: 0.2,
-        sustain: 0.1,
+        sustain: 0.3,
         release: 0.8,
       },
       modulationIndex: 2,
@@ -40,8 +40,8 @@ export const initKalimbaAudio = async (): Promise<void> => {
       },
     }).toDestination();
     
-    // Set volume (kalimba is typically quieter)
-    synth.volume.value = -12;
+    // Set volume (increased for better audibility)
+    synth.volume.value = 3;
     
     isInitialized = true;
   } catch (error) {
@@ -124,4 +124,5 @@ export const disposeKalimbaAudio = (): void => {
     isInitialized = false;
   }
 };
+
 

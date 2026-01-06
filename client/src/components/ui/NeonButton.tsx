@@ -74,7 +74,7 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
         colors.text,
         sizeStyles[size],
         fullWidth && 'w-full',
-        disabled && 'opacity-50 cursor-not-allowed',
+        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
         className
       )}
       style={{
@@ -107,6 +107,7 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
 };
 
 export default NeonButton;
+
 
 
 
