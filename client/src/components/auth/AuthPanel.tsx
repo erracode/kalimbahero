@@ -144,7 +144,7 @@ export function AuthPanel({ onAuthSuccess }: AuthPanelProps) {
                                             <Input
                                                 placeholder="hero@kalimba.com"
                                                 {...field}
-                                                className="bg-black/40 border-white/10 focus:border-cyan-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-cyan-500/50"
+                                                className="-skew-x-[12deg] bg-black/40 border-white/10 focus:border-cyan-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-cyan-500/50"
                                             />
                                         </FormControl>
                                         <FormMessage className="text-red-400 text-xs font-bold uppercase" />
@@ -162,7 +162,7 @@ export function AuthPanel({ onAuthSuccess }: AuthPanelProps) {
                                                 type="password"
                                                 placeholder="••••••••"
                                                 {...field}
-                                                className="bg-black/40 border-white/10 focus:border-cyan-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-cyan-500/50"
+                                                className="-skew-x-[12deg] bg-black/40 border-white/10 focus:border-cyan-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-cyan-500/50"
                                             />
                                         </FormControl>
                                         <FormMessage className="text-red-400 text-xs font-bold uppercase" />

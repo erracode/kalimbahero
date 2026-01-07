@@ -4,7 +4,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, ArrowLeft, Star, Music, Snowflake, Sword, Heart, Bell, Zap, Gamepad2, Search, Box, FileText } from 'lucide-react';
+import { Search, Plus, Play, Trash2, Edit2, Star, Heart, Music, Zap, ArrowLeft, Snowflake, Sword, Bell, Box, FileText } from 'lucide-react';
 import { NeonButton } from './NeonButton';
 import type { Song } from '@/types/game';
 import { useSongStore } from '@/stores/songStore';
@@ -22,6 +22,7 @@ interface SongLibraryProps {
   onBack: () => void;
   gameMode?: GameMode;
   onGameModeChange?: (mode: GameMode) => void;
+  initialView?: 'all' | 'bookmarks' | 'my-tabs';
 }
 
 // Icon map for song details
@@ -50,26 +51,29 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   onBack,
   gameMode = '3d',
   onGameModeChange,
+  initialView = 'all',
 }) => {
   const { songs } = useSongStore();
   const [filter, setFilter] = useState<string>('all');
-  const [tab, setTab] = useState<'my' | 'community'>('my');
+  // Set initial tab based on initialView prop
+  // bookmarks and all -> Global tab, my-tabs -> My Tabs tab
+  const [tab, setTab] = useState<'my' | 'community'>(initialView === 'my-tabs' ? 'my' : 'community');
+  const [subFilter, setSubFilter] = useState<'all' | 'bookmarks' | 'my-tabs'>(initialView);
   const [communitySongs, setCommunitySongs] = useState<Song[]>([]);
-  const [isLoadingCommunity, setIsLoadingCommunity] = useState(false);
   const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Pagination & Social Filters
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [sort, setSort] = useState<string>('new');
-  const [showFavorites, setShowFavorites] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(1); // Added page state
+  const sort = 'new';
+  const showFavorites = subFilter === 'bookmarks'; // Derived from subFilter
 
   const { isAuthenticated } = useAuthSync();
 
   const fetchCommunity = async (targetPage = page) => {
-    setIsLoadingCommunity(true);
+    setIsLoading(true);
     try {
       const params = new URLSearchParams({
         page: targetPage.toString(),
@@ -95,13 +99,12 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
           isLiked: s.isLiked,
           isFavorited: s.isFavorited
         })));
-        setTotalPages(json.pagination.totalPages);
         setPage(json.pagination.page);
       }
     } catch (err) {
       console.error("Failed to fetch community songs", err);
     } finally {
-      setIsLoadingCommunity(false);
+      setIsLoading(false);
     }
   };
 
@@ -129,32 +132,47 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   const handleTabChange = (newTab: 'my' | 'community') => {
     setTab(newTab);
     setSelectedSongId(null);
-    if (newTab === 'community') {
-      fetchCommunity();
+    if (newTab === 'community' && subFilter === 'my-tabs') {
+      setSubFilter('all');
     }
   };
+
+  useEffect(() => {
+    if (tab === 'community') {
+      fetchCommunity();
+    }
+  }, [filter, page, showFavorites, tab, sort]);
 
   const activeSongs = tab === 'my' ? songs : communitySongs;
 
   const filteredSongs = useMemo(() => {
     let result = activeSongs;
 
+    // Sub-filters for 'My' tab
+    if (tab === 'my') {
+      if (subFilter === 'bookmarks') {
+        result = result.filter((s: Song) => s.isFavorited || s.isLiked);
+      } else if (subFilter === 'my-tabs') {
+        result = result.filter((s: Song) => !s.cloudId);
+      }
+    }
+
     // Difficulty Filter
     if (filter !== 'all') {
-      result = result.filter(s => s.difficulty === filter);
+      result = result.filter((s: Song) => s.difficulty === filter);
     }
 
     // Search Query
-    if (searchQuery.trim()) {
+    if (searchQuery && searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(s =>
+      result = result.filter((s: Song) =>
         s.title.toLowerCase().includes(q) ||
         s.artist.toLowerCase().includes(q)
       );
     }
 
     return result;
-  }, [filter, activeSongs, searchQuery]);
+  }, [filter, activeSongs, searchQuery, subFilter, tab]);
 
   const selectedSong = useMemo(() => {
     return activeSongs.find(s => s.id === selectedSongId) || null;
@@ -256,9 +274,19 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   )}
                 >
                   <FileText className="w-4 h-4 skew-x-[12deg]" />
-                  <span className="skew-x-[12deg]">Tab Mode</span>
+                  <span className="skew-x-[12deg]">Notation</span>
                 </button>
               </div>
+            )}
+
+            {tab === 'my' && onCreateNew && (
+              <button
+                onClick={onCreateNew}
+                className="group flex items-center gap-2 px-6 py-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 rounded-none skew-x-[-12deg] transition-all border border-cyan-500/20 hover:border-cyan-500/40 cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.1)] hover:shadow-[0_0_30px_rgba(6,182,212,0.2)]"
+              >
+                <Plus className="w-4 h-4 skew-x-[12deg]" />
+                <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-widest">Create New</span>
+              </button>
             )}
 
             {/* Library Source Switch */}
@@ -270,7 +298,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   tab === 'my' ? "bg-white/10 text-white shadow" : "text-white/30 hover:text-white"
                 )}
               >
-                <span className="skew-x-[12deg] block">Local</span>
+                <span className="skew-x-[12deg] block">My Tabs</span>
               </button>
               <button
                 onClick={() => handleTabChange('community')}
@@ -279,8 +307,29 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   tab === 'community' ? "bg-white/10 text-white shadow" : "text-white/30 hover:text-white"
                 )}
               >
-                <span className="skew-x-[12deg] block">Community</span>
+                <span className="skew-x-[12deg] block">Global</span>
               </button>
+            </div>
+
+            {/* Sub-filters */}
+            <div className="flex items-center gap-2 ml-6">
+              {(tab === 'my'
+                ? (['all', 'my-tabs', 'bookmarks'] as const)
+                : (['all', 'bookmarks'] as const)
+              ).map((sf) => (
+                <button
+                  key={sf}
+                  onClick={() => setSubFilter(sf)}
+                  className={cn(
+                    "px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer border",
+                    subFilter === sf
+                      ? "bg-cyan-500/20 border-cyan-500 text-cyan-400"
+                      : "bg-transparent border-white/10 text-white/40 hover:text-white hover:border-white/20"
+                  )}
+                >
+                  {sf === 'all' ? 'All' : sf === 'my-tabs' ? 'Created' : 'Saved'}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -367,7 +416,20 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
           {/* Scroll Area */}
           <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/20">
             <div className="flex flex-col">
-              {filteredSongs.length > 0 ? filteredSongs.map((song) => {
+              {isLoading && tab === 'community' ? (
+                <div className="grid grid-cols-1 gap-1">
+                  {[...Array(10)].map((_, i) => (
+                    <div key={i} className="flex items-center px-10 py-4 bg-white/[0.03] border-b border-white/[0.03] animate-pulse">
+                      <div className="flex-[2] h-4 bg-white/10 rounded-sm mr-4" />
+                      <div className="flex-[3] h-6 bg-white/10 rounded-sm mr-4" />
+                      <div className="flex-[1] flex justify-center">
+                        <div className="w-3 h-3 bg-white/10 rounded-none rotate-45" />
+                      </div>
+                      <div className="flex-[1] h-4 bg-white/10 rounded-sm ml-4" />
+                    </div>
+                  ))}
+                </div>
+              ) : filteredSongs.length > 0 ? filteredSongs.map((song) => {
                 const isSelected = selectedSongId === song.id;
                 return (
                   <motion.div
@@ -548,16 +610,24 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   </NeonButton>
 
                   <div className="grid grid-cols-2 gap-3">
-                    {tab === 'my' && onEditSong && (
-                      <button onClick={() => onEditSong(selectedSong)} className="py-3 text-xs font-bold uppercase tracking-widest bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-none skew-x-[-12deg] border border-white/5 transition-colors cursor-pointer">
-                        <span className="skew-x-[12deg] block">Edit</span>
-                      </button>
-                    )}
-                    {tab === 'my' && onDeleteSong && (
-                      <button onClick={() => setShowDeleteConfirm(selectedSong.id)} className="py-3 text-xs font-bold uppercase tracking-widest bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 rounded-none skew-x-[-12deg] border border-red-500/10 transition-colors cursor-pointer">
-                        <span className="skew-x-[12deg] block">Delete</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => window.open(`/tab/${selectedSong.id}`, '_blank')}
+                      className="py-3 w-full text-xs font-black italic uppercase tracking-[0.2em] bg-cyan-500/10 hover:bg-cyan-500 text-cyan-400 hover:text-black rounded-none skew-x-[-12deg] border border-cyan-500/30 hover:border-cyan-400 transition-all cursor-pointer flex items-center justify-center gap-2 group shadow-[0_0_15px_rgba(6,182,212,0.1)] hover:shadow-[0_0_25px_rgba(6,182,212,0.4)]"
+                    >
+                      <span className="block skew-x-[12deg]">VIEW FULL TAB →</span>
+                    </button>
+                    <div className="flex gap-2">
+                      {tab === 'my' && onEditSong && (
+                        <button onClick={() => onEditSong(selectedSong)} className="flex-1 py-3 text-xs font-bold uppercase tracking-widest bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-none border border-white/5 transition-colors cursor-pointer">
+                          <Edit2 className="w-4 h-4 mx-auto" />
+                        </button>
+                      )}
+                      {tab === 'my' && onDeleteSong && (
+                        <button onClick={() => setShowDeleteConfirm(selectedSong.id)} className="flex-1 py-3 text-xs font-bold uppercase tracking-widest bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 rounded-none border border-red-500/10 transition-colors cursor-pointer">
+                          <Trash2 className="w-4 h-4 mx-auto" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </motion.div>

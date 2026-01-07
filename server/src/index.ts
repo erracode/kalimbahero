@@ -6,10 +6,10 @@ import usersRouter from './routes/users'
 
 const app = new Hono()
 
-// Configure CORS
-app.use('/api/*', cors({
+// Configure CORS (Global)
+app.use('*', cors({
   origin: ['http://localhost:5173'], // Client URL
-  allowHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
+  allowHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'credentials'],
   allowMethods: ['POST', 'GET', 'OPTIONS', 'PUT', 'DELETE'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,

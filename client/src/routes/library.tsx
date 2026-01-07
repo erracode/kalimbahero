@@ -9,8 +9,15 @@ import { useLocalStorage, STORAGE_KEYS } from "@/hooks/useLocalStorage";
 import { useAuthSync } from "@/hooks/useAuthSync";
 import { useBuilderStore } from "@/stores/builderStore";
 import type { Song } from "@/types/game";
+import { z } from "zod";
+import { zodValidator } from "@tanstack/zod-adapter";
+
+const searchSchema = z.object({
+  view: z.enum(["all", "bookmarks", "my-tabs"]).optional().default("all"),
+});
 
 export const Route = createFileRoute("/library")({
+  validateSearch: zodValidator(searchSchema),
   head: () => ({
     title: "Song Library | Kalimba Hero",
     meta: [
@@ -25,6 +32,7 @@ export const Route = createFileRoute("/library")({
 
 function SongLibraryRoute() {
   const navigate = useNavigate();
+  const { view } = Route.useSearch();
   const { setEditingSong } = useBuilderStore();
 
   const { songs: storedSongs, deleteSong } = useSongStore();
@@ -79,6 +87,7 @@ function SongLibraryRoute() {
         onBack={() => navigate({ to: "/" })}
         gameMode={gameMode}
         onGameModeChange={setGameMode}
+        initialView={view}
       />
     </div>
   );

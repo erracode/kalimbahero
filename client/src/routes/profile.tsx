@@ -133,26 +133,31 @@ function ProfilePage() {
                 {/* Grid Sections */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* My Setlist */}
-                    <div className="bg-black/40 backdrop-blur-md border border-white/10 p-8 rounded-none skew-x-[-12deg] h-72 flex flex-col items-center justify-center text-center group cursor-pointer hover:bg-black/60 transition-all">
+                    <div
+                        onClick={() => navigate({ to: '/library', search: { view: 'my-tabs' } })}
+                        className="bg-black/40 backdrop-blur-md border border-white/10 p-8 rounded-none skew-x-[-12deg] h-72 flex flex-col items-center justify-center text-center group cursor-pointer hover:bg-black/60 transition-all"
+                    >
                         <div className="skew-x-[12deg] flex flex-col items-center">
                             <div className="p-4 bg-white/5 border border-white/10 mb-6 rotate-3 group-hover:rotate-0 transition-transform">
-                                <Music className="w-12 h-12 text-cyan-400 opacity-20 group-hover:opacity-100 transition-opacity" />
+                                <Music className="w-12 h-12 text-purple-400 opacity-20 group-hover:opacity-100 transition-opacity" />
                             </div>
                             <h3 className="text-2xl font-black italic text-white uppercase tracking-tighter mb-2">My Setlist</h3>
                             <p className="text-white/30 text-xs font-bold uppercase tracking-widest mb-6">Unleash your creations</p>
                             <NeonButton
-                                variant="cyan"
+                                variant="purple"
                                 size="sm"
-                                className="cursor-pointer font-black italic tracking-widest uppercase"
-                                onClick={() => navigate({ to: '/song-builder' })}
+                                className="pointer-events-none font-black italic tracking-widest uppercase"
                             >
-                                CREATE TRACK
+                                VIEW TABS
                             </NeonButton>
                         </div>
                     </div>
 
                     {/* Favorites */}
-                    <div className="bg-black/40 backdrop-blur-md border border-white/10 p-8 rounded-none skew-x-[-12deg] h-72 flex flex-col items-center justify-center text-center group cursor-pointer hover:bg-black/60 transition-all">
+                    <div
+                        onClick={() => navigate({ to: '/library', search: { view: 'bookmarks' } })}
+                        className="bg-black/40 backdrop-blur-md border border-white/10 p-8 rounded-none skew-x-[-12deg] h-72 flex flex-col items-center justify-center text-center group cursor-pointer hover:bg-black/60 transition-all"
+                    >
                         <div className="skew-x-[12deg] flex flex-col items-center">
                             <div className="p-4 bg-white/5 border border-white/10 mb-6 -rotate-3 group-hover:rotate-0 transition-transform">
                                 <Star className="w-12 h-12 text-yellow-400 opacity-20 group-hover:opacity-100 transition-opacity" />
@@ -160,12 +165,11 @@ function ProfilePage() {
                             <h3 className="text-2xl font-black italic text-white uppercase tracking-tighter mb-2">Bookmarks</h3>
                             <p className="text-white/30 text-xs font-bold uppercase tracking-widest mb-6">Saved for later</p>
                             <NeonButton
-                                variant="purple"
+                                variant="orange"
                                 size="sm"
-                                className="cursor-pointer font-black italic tracking-widest uppercase"
-                                onClick={() => navigate({ to: '/' })}
+                                className="pointer-events-none font-black italic tracking-widest uppercase"
                             >
-                                EXPLORE
+                                VIEW SAVED
                             </NeonButton>
                         </div>
                     </div>

@@ -5,10 +5,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText, Wand2, Cloud, Globe } from 'lucide-react';
-import { NeonButton } from './NeonButton';
-import { ToggleButton } from './ToggleButton';
-import { IconButton } from './IconButton';
+import { AuroraBackground } from '@/components/ui/AuroraBackground';
 import { AutoTranscribeModal } from './AutoTranscribeModal';
+import { cn } from '@/lib/utils';
 import { Input } from './input';
 import {
   Select,
@@ -330,11 +329,19 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
 
   return (
     <motion.div
-      className="fixed inset-0 z-10 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 overflow-hidden flex flex-col"
+      className="fixed inset-0 z-10 bg-black overflow-hidden flex flex-col font-sans"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
+      {/* Background Ambience */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 opacity-40">
+          <AuroraBackground />
+        </div>
+        <div className="absolute inset-0 bg-black/50 z-10" />
+        <div className="absolute inset-0 bg-[url('/grid.png')] opacity-[0.05] z-10" />
+      </div>
       <AutoTranscribeModal
         isOpen={showTranscribeModal}
         onClose={() => setShowTranscribeModal(false)}
@@ -342,81 +349,83 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       />
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-4 p-4 bg-black/30 border-b border-white/10">
-        <div className="flex items-center gap-4">
-          <NeonButton
-            variant="purple"
-            size="sm"
-            icon={<ArrowLeft className="w-4 h-4" />}
+      <div className="relative z-20 flex items-center justify-between gap-4 px-6 py-4 bg-black/20 border-b border-white/5 backdrop-blur-md">
+        <div className="flex items-center gap-6">
+          <button
             onClick={onBack}
+            className="group flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-none skew-x-[-12deg] transition-all border border-white/5 hover:border-white/20 cursor-pointer text-white/60 hover:text-white"
           >
-            Back
-          </NeonButton>
+            <ArrowLeft className="w-4 h-4 skew-x-[12deg]" />
+            <span className="skew-x-[12deg] text-xs font-black uppercase tracking-widest">Back</span>
+          </button>
 
-          <h1 className="text-2xl font-black text-white">
-            CHART BUILDER
+          <h1 className="text-2xl font-black italic uppercase tracking-tighter text-white drop-shadow-md">
+            Chart Builder
           </h1>
         </div>
 
         {/* Editor Mode Toggle */}
-        <div className="flex items-center gap-2 bg-white/5 rounded-xl p-1 border border-white/10">
-          <ToggleButton
-            active={editorMode === 'chart'}
-            variant="primary"
-            size="md"
-            icon={<Grid className="w-4 h-4" />}
+        <div className="flex bg-black/40 p-1 rounded-none skew-x-[-12deg] border border-white/5">
+          <button
             onClick={() => handleModeChange('chart')}
+            className={cn(
+              "flex items-center gap-2 px-6 py-2 rounded-none text-xs font-black italic uppercase tracking-widest transition-all cursor-pointer",
+              editorMode === 'chart' ? "bg-cyan-600 text-white shadow-lg" : "text-white/40 hover:text-white"
+            )}
           >
-            Visual Editor
-          </ToggleButton>
-          <ToggleButton
-            active={editorMode === 'text'}
-            variant="secondary"
-            size="md"
-            icon={<FileText className="w-4 h-4" />}
+            <Grid className="w-3 h-3 skew-x-[12deg]" />
+            <span className="skew-x-[12deg]">Visual Editor</span>
+          </button>
+          <button
             onClick={() => handleModeChange('text')}
+            className={cn(
+              "flex items-center gap-2 px-6 py-2 rounded-none text-xs font-black italic uppercase tracking-widest transition-all cursor-pointer",
+              editorMode === 'text' ? "bg-purple-600 text-white shadow-lg" : "text-white/40 hover:text-white"
+            )}
           >
-            Tab Notation
-          </ToggleButton>
+            <FileText className="w-3 h-3 skew-x-[12deg]" />
+            <span className="skew-x-[12deg]">Notation</span>
+          </button>
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2">
-          <NeonButton
-            variant="pink"
-            size="sm"
-            icon={<Wand2 className="w-4 h-4" />}
+        <div className="flex items-center gap-3">
+          <button
             onClick={() => setShowTranscribeModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 hover:text-pink-300 rounded-none skew-x-[-12deg] border border-pink-500/20 hover:border-pink-500/40 transition-all cursor-pointer"
             title="Auto-Transcribe from Audio"
           >
-            Magic Import
-          </NeonButton>
+            <Wand2 className="w-4 h-4 skew-x-[12deg]" />
+            <span className="skew-x-[12deg] text-xs font-black uppercase tracking-widest">Magic Import</span>
+          </button>
 
-          <IconButton
-            variant={showSettings ? 'default' : 'ghost'}
-            size="md"
-            icon={<Edit3 className="w-5 h-5" />}
-            title="Toggle settings"
+          <button
             onClick={() => setShowSettings(!showSettings)}
-          />
+            className={cn(
+              "p-2 rounded-none skew-x-[-12deg] border transition-all cursor-pointer",
+              showSettings ? "bg-white/20 text-white border-white/30" : "bg-white/5 text-white/40 border-white/10 hover:text-white/60"
+            )}
+          >
+            <Edit3 className="w-4 h-4 skew-x-[12deg]" />
+          </button>
 
-          <NeonButton
-            variant="cyan"
-            size="sm"
-            icon={<Play className="w-4 h-4" />}
+          <div className="w-px h-6 bg-white/10 mx-2 skew-x-[-12deg]" />
+
+          <button
             onClick={handleTestPlay}
+            className="flex items-center gap-2 px-5 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-none skew-x-[-12deg] transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:shadow-[0_0_25px_rgba(6,182,212,0.6)] cursor-pointer"
           >
-            Test
-          </NeonButton>
+            <Play className="w-4 h-4 skew-x-[12deg] fill-white" />
+            <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-widest">Test</span>
+          </button>
 
-          <NeonButton
-            variant="green"
-            size="sm"
-            icon={<Save className="w-4 h-4" />}
+          <button
             onClick={handleSave}
+            className="flex items-center gap-2 px-5 py-2 bg-green-500 hover:bg-green-400 text-white rounded-none skew-x-[-12deg] transition-all shadow-[0_0_15px_rgba(34,197,94,0.4)] hover:shadow-[0_0_25px_rgba(34,197,94,0.6)] cursor-pointer"
           >
-            Save
-          </NeonButton>
+            <Save className="w-4 h-4 skew-x-[12deg]" />
+            <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-widest">Save</span>
+          </button>
         </div>
       </div>
 
@@ -427,90 +436,95 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
           {showSettings && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 320, opacity: 1 }}
+              animate={{ width: 340, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              className="flex-shrink-0 border-r border-white/10 overflow-y-auto bg-black/20"
+              className="relative z-10 flex-shrink-0 border-r border-white/5 overflow-y-auto bg-black/40 backdrop-blur-md"
             >
-              <div className="p-4 space-y-4">
-                <h2 className="text-lg font-bold text-white">Song Settings</h2>
+              <div className="p-6 space-y-6">
+                <h2 className="text-xl font-black italic uppercase tracking-tighter text-white/80 border-b border-white/5 pb-4">Song Settings</h2>
 
                 {/* Title */}
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Title</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Title</label>
                   <Input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="My Awesome Song"
-                    className="w-full bg-white/10 border-white/20 text-white placeholder-white/30 focus:border-cyan-500"
+                    placeholder="MY AWESOME SONG"
+                    className="w-full bg-white/5 border-white/10 text-white placeholder-white/20 focus:border-cyan-500/50 rounded-none skew-x-[-12deg] text-xs font-bold uppercase tracking-wider h-10 px-4"
                   />
                 </div>
 
                 {/* Artist */}
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Artist</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Artist</label>
                   <Input
                     type="text"
                     value={artist}
                     onChange={(e) => setArtist(e.target.value)}
-                    placeholder="Artist Name"
-                    className="w-full bg-white/10 border-white/20 text-white placeholder-white/30 focus:border-cyan-500"
+                    placeholder="ARTIST NAME"
+                    className="w-full bg-white/5 border-white/10 text-white placeholder-white/20 focus:border-cyan-500/50 rounded-none skew-x-[-12deg] text-xs font-bold uppercase tracking-wider h-10 px-4"
                   />
                 </div>
 
                 {/* Time Signature */}
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Time Signature</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Time Signature</label>
                   <Select
                     value={timeSignature}
                     onValueChange={(value) => setTimeSignature(value as TimeSignature)}
                   >
-                    <SelectTrigger className="w-full bg-white/10 border-white/20 text-white focus:border-cyan-500">
+                    <SelectTrigger className="w-full bg-white/5 border-white/10 text-white focus:border-cyan-500/50 rounded-none skew-x-[-12deg] h-10 px-4">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-white/20">
-                      <SelectItem value="4/4" className="text-white hover:bg-white/10 cursor-pointer">4/4</SelectItem>
-                      <SelectItem value="3/4" className="text-white hover:bg-white/10 cursor-pointer">3/4</SelectItem>
-                      <SelectItem value="2/4" className="text-white hover:bg-white/10 cursor-pointer">2/4</SelectItem>
+                    <SelectContent className="bg-[#111] border-white/10 rounded-sm">
+                      <SelectItem value="4/4" className="text-white focus:bg-white/10 cursor-pointer">4/4</SelectItem>
+                      <SelectItem value="3/4" className="text-white focus:bg-white/10 cursor-pointer">3/4</SelectItem>
+                      <SelectItem value="2/4" className="text-white focus:bg-white/10 cursor-pointer">2/4</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-white/40 mt-1">
+                  <p className="text-[10px] text-white/30 mt-2 italic px-2">
                     Determines grid divisions ({timeSignature.split('/')[0]} beats per measure)
                   </p>
                 </div>
 
                 {/* Difficulty */}
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Difficulty</label>
-                  <div className="flex gap-1 flex-wrap">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Difficulty</label>
+                  <div className="flex flex-wrap gap-2">
                     {DIFFICULTIES.map((diff) => (
-                      <ToggleButton
+                      <button
                         key={diff}
-                        active={difficulty === diff}
-                        variant="default"
-                        size="sm"
                         onClick={() => setDifficulty(diff)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-none skew-x-[-12deg] text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer",
+                          difficulty === diff
+                            ? "bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.4)]"
+                            : "bg-white/5 text-white/40 border-white/10 hover:text-white hover:bg-white/10"
+                        )}
                       >
-                        {diff}
-                      </ToggleButton>
+                        <span className="skew-x-[12deg] block">{diff}</span>
+                      </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Icon */}
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Icon</label>
-                  <div className="flex gap-1 flex-wrap">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Icon</label>
+                  <div className="flex gap-2 flex-wrap">
                     {ICONS.map((i) => (
                       <button
                         key={i.id}
                         onClick={() => setIcon(i.id)}
-                        className={`w-8 h-8 rounded text-lg flex items-center justify-center transition-all cursor-pointer ${icon === i.id
-                          ? 'bg-white/20 ring-2 ring-cyan-500'
-                          : 'bg-white/10 hover:bg-white/20'
-                          }`}
+                        className={cn(
+                          "w-10 h-10 rounded-none skew-x-[-12deg] text-lg flex items-center justify-center transition-all cursor-pointer border",
+                          icon === i.id
+                            ? "bg-cyan-500/20 border-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                            : "bg-white/5 border-white/10 text-white/40 hover:text-white"
+                        )}
                       >
-                        {i.emoji}
+                        <span className="skew-x-[12deg]">{i.emoji}</span>
                       </button>
                     ))}
                   </div>
@@ -518,14 +532,16 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
 
                 {/* Color */}
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Color</label>
-                  <div className="flex gap-1 flex-wrap">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Color</label>
+                  <div className="flex gap-2 flex-wrap">
                     {COLORS.map((color) => (
                       <button
                         key={color}
                         onClick={() => setIconColor(color)}
-                        className={`w-6 h-6 rounded-full transition-all cursor-pointer ${iconColor === color ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900' : ''
-                          }`}
+                        className={cn(
+                          "w-8 h-8 rounded-none skew-x-[-12deg] transition-all cursor-pointer border border-white/10",
+                          iconColor === color ? "scale-110 shadow-[0_0_15px_rgba(255,255,255,0.5)] border-white" : "opacity-60 hover:opacity-100"
+                        )}
                         style={{ backgroundColor: color }}
                       />
                     ))}
@@ -581,33 +597,14 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                 </div>
 
                 {/* JSON Import/Export */}
-                <div className="pt-4 border-t border-white/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-white/60">Import/Export</span>
-                    <div className="flex gap-1">
-                      <IconButton
-                        variant="default"
-                        size="sm"
-                        icon={<RefreshCw className="w-4 h-4" />}
-                        title="Generate JSON"
-                        onClick={handleGenerateJSON}
-                      />
-                      <IconButton
-                        variant="default"
-                        size="sm"
-                        icon={<Upload className="w-4 h-4" />}
-                        title="Load JSON"
-                        onClick={handleLoadJSON}
-                      />
-                      {jsonOutput && (
-                        <IconButton
-                          variant="default"
-                          size="sm"
-                          icon={<Download className="w-4 h-4" />}
-                          title="Copy JSON"
-                          onClick={handleCopyJSON}
-                        />
-                      )}
+                <div className="pt-6 border-t border-white/5">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Import/Export</span>
+                    <div className="flex gap-2">
+                      {/* Refactored IconButtons to simple skewed buttons for consistency */}
+                      <button onClick={handleGenerateJSON} title="Generate JSON" className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white skew-x-[-12deg] transition-colors"><RefreshCw className="w-3 h-3 skew-x-[12deg]" /></button>
+                      <button onClick={handleLoadJSON} title="Load JSON" className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white skew-x-[-12deg] transition-colors"><Upload className="w-3 h-3 skew-x-[12deg]" /></button>
+                      {jsonOutput && <button onClick={handleCopyJSON} title="Copy JSON" className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white skew-x-[-12deg] transition-colors"><Download className="w-3 h-3 skew-x-[12deg]" /></button>}
                     </div>
                   </div>
 
@@ -643,33 +640,35 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
               onTimeSignatureChange={setTimeSignature}
             />
           ) : (
-            <div className="h-full flex flex-col p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-white">Tab Notation</h2>
-                <p className="text-sm text-white/50">
-                  Enter notes using scale degrees 1-7. Use ° or * for higher octaves.
-                </p>
+            <div className="h-full flex flex-col p-8 relative z-10">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white">Tab Notation</h2>
+                <div className="px-4 py-2 bg-white/5 border border-white/10 skew-x-[-12deg]">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 skew-x-[12deg]">
+                    Use 1-7 for scale degrees • ° or * for octaves
+                  </p>
+                </div>
               </div>
 
               <textarea
                 value={notation}
                 onChange={(e) => setNotation(e.target.value)}
                 placeholder="1° 7 6 5 4&#10;5 6 1°&#10;135(461')&#10;7 6 5 4 3&#10;6 5 4 3 2&#10;..."
-                className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-cyan-500 transition-colors font-mono text-sm resize-none"
+                className="flex-1 px-8 py-6 bg-black/40 border border-white/10 text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50 transition-colors font-mono text-sm resize-none rounded-none shadow-inner"
               />
 
               {/* Notation help */}
-              <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
-                <h3 className="text-sm font-bold text-white mb-2">Quick Reference</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-white/60">
-                  <div><code className="text-cyan-400">1-7</code> = Scale degrees</div>
-                  <div><code className="text-cyan-400">1°</code> = Higher octave</div>
-                  <div><code className="text-cyan-400">(1 3 5)</code> = Chord (spaced)</div>
-                  <div><code className="text-cyan-400">135</code> = Chord (compact)</div>
-                  <div><code className="text-cyan-400">- or _</code> = Rest</div>
-                  <div><code className="text-cyan-400">New line</code> = New phrase</div>
-                  <div><code className="text-cyan-400">Space</code> = Note separator</div>
-                  <div><code className="text-cyan-400">* or '</code> = Octave marker</div>
+              <div className="mt-6 p-6 bg-white/[0.02] border border-white/5">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-4">Quick Reference</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-medium text-white/60">
+                  <div><code className="text-cyan-400 font-bold">1-7</code> Scale degrees</div>
+                  <div><code className="text-cyan-400 font-bold">1°</code> Higher octave</div>
+                  <div><code className="text-cyan-400 font-bold">(1 3 5)</code> Chord (spaced)</div>
+                  <div><code className="text-cyan-400 font-bold">135</code> Chord (compact)</div>
+                  <div><code className="text-cyan-400 font-bold">-</code> Rest</div>
+                  <div><code className="text-cyan-400 font-bold">Enter</code> New phrase</div>
+                  <div><code className="text-cyan-400 font-bold">Space</code> Separator</div>
+                  <div><code className="text-cyan-400 font-bold">* '</code> Markers</div>
                 </div>
               </div>
             </div>

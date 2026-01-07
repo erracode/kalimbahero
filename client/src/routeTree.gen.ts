@@ -15,6 +15,7 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TabSlugRouteImport } from './routes/tab.$slug'
 import { Route as GameSongIdRouteImport } from './routes/game.$songId'
 
 const TunerRoute = TunerRouteImport.update({
@@ -47,6 +48,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TabSlugRoute = TabSlugRouteImport.update({
+  id: '/tab/$slug',
+  path: '/tab/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GameSongIdRoute = GameSongIdRouteImport.update({
   id: '/game/$songId',
   path: '/game/$songId',
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/song-builder': typeof SongBuilderRoute
   '/tuner': typeof TunerRoute
   '/game/$songId': typeof GameSongIdRoute
+  '/tab/$slug': typeof TabSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/song-builder': typeof SongBuilderRoute
   '/tuner': typeof TunerRoute
   '/game/$songId': typeof GameSongIdRoute
+  '/tab/$slug': typeof TabSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/song-builder': typeof SongBuilderRoute
   '/tuner': typeof TunerRoute
   '/game/$songId': typeof GameSongIdRoute
+  '/tab/$slug': typeof TabSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/song-builder'
     | '/tuner'
     | '/game/$songId'
+    | '/tab/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/song-builder'
     | '/tuner'
     | '/game/$songId'
+    | '/tab/$slug'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/song-builder'
     | '/tuner'
     | '/game/$songId'
+    | '/tab/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   SongBuilderRoute: typeof SongBuilderRoute
   TunerRoute: typeof TunerRoute
   GameSongIdRoute: typeof GameSongIdRoute
+  TabSlugRoute: typeof TabSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -165,6 +178,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tab/$slug': {
+      id: '/tab/$slug'
+      path: '/tab/$slug'
+      fullPath: '/tab/$slug'
+      preLoaderRoute: typeof TabSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/game/$songId': {
       id: '/game/$songId'
       path: '/game/$songId'
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   SongBuilderRoute: SongBuilderRoute,
   TunerRoute: TunerRoute,
   GameSongIdRoute: GameSongIdRoute,
+  TabSlugRoute: TabSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

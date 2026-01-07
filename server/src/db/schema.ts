@@ -84,3 +84,12 @@ export const favorites = pgTable("favorites", {
 }, (t) => ({
     pk: primaryKey({ columns: [t.userId, t.songId] }),
 }));
+
+export const ratings = pgTable("ratings", {
+    userId: text("userId").notNull().references(() => users.id, { onDelete: 'cascade' }),
+    songId: uuid("songId").notNull().references(() => songs.id, { onDelete: 'cascade' }),
+    score: integer("score").notNull(), // 1-5
+    createdAt: timestamp("createdAt").defaultNow().notNull()
+}, (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.songId] }),
+}));

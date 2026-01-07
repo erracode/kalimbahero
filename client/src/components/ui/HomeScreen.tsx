@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Library, Wrench, Mic2, User, LogIn, Sparkles, Music2 } from 'lucide-react';
+import { Library, Wrench, Mic2, User, LogIn } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,14 +9,12 @@ import { AuthPanel } from '../auth/AuthPanel';
 import { ProfilePanel } from '../profile/ProfilePanel';
 
 interface HomeScreenProps {
-  onStartGame: () => void;
   onSongBuilder: () => void;
   onLibrary: () => void;
   onTuner: () => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
-  onStartGame,
   onSongBuilder,
   onLibrary,
   onTuner,
@@ -31,7 +29,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const menuItems = [
     { label: 'LIBRARY', icon: <Library className="w-6 h-6" />, action: onLibrary, variant: 'purple' as const, desc: 'Browse your song collection' },
-    { label: 'HERO PLAY', icon: <Sparkles className="w-6 h-6" />, action: onStartGame, variant: 'cyan' as const, desc: 'Play in Rhythm Mode' },
     { label: 'SONG BUILDER', icon: <Wrench className="w-6 h-6" />, action: onSongBuilder, variant: 'orange' as const, desc: 'Create and edit your own tracks' },
     { label: 'TUNER', icon: <Mic2 className="w-6 h-6" />, action: onTuner, variant: 'green' as const, desc: 'Tune your real Kalimba' },
     {
@@ -83,7 +80,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 {/* Hover Fill Effect */}
                 <div className={cn(
                   "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r",
-                  item.variant === 'cyan' && "from-cyan-900/80 to-transparent",
                   item.variant === 'purple' && "from-purple-900/80 to-transparent",
                   item.variant === 'orange' && "from-orange-900/80 to-transparent",
                   item.variant === 'green' && "from-green-900/80 to-transparent",
@@ -100,7 +96,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </span>
                   <span className={cn(
                     "opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-x-4 group-hover:translate-x-0",
-                    item.variant === 'cyan' && "text-cyan-400",
                     item.variant === 'purple' && "text-purple-400",
                     item.variant === 'orange' && "text-orange-400",
                     item.variant === 'green' && "text-green-400",

@@ -25,9 +25,7 @@ function HomeRoute() {
   const navigate = useNavigate();
   const { setEditingSong } = useBuilderStore();
 
-  const handleStartGame = () => {
-    navigate({ to: "/library" });
-  };
+
 
   const handleCreateNew = () => {
     setEditingSong(null);
@@ -53,7 +51,6 @@ function HomeRoute() {
       </div>
 
       <HomeScreen
-        onStartGame={handleStartGame}
         onSongBuilder={handleCreateNew}
         onLibrary={() => navigate({ to: "/library" })}
         onTuner={() => navigate({ to: "/tuner" })}

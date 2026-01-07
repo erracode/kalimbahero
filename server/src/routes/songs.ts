@@ -1,7 +1,7 @@
 
 import { Hono } from 'hono';
 import { db } from '../db';
-import { songs, users, likes, favorites } from '../db/schema';
+import { songs, users, likes, favorites, ratings } from '../db/schema';
 import { auth } from '../auth';
 import { eq, desc, sql, and, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -54,6 +54,8 @@ app.get('/', async (c) => {
         // Check if user likes/favorites this song
         isLiked: session ? sql<boolean>`EXISTS(SELECT 1 FROM ${likes} WHERE ${likes.songId} = ${songs.id} AND ${likes.userId} = ${session.user.id})` : sql<boolean>`false`,
         isFavorited: session ? sql<boolean>`EXISTS(SELECT 1 FROM ${favorites} WHERE ${favorites.songId} = ${songs.id} AND ${favorites.userId} = ${session.user.id})` : sql<boolean>`false`,
+        averageRating: sql<number>`(SELECT AVG(${ratings.score})::numeric(10,1) FROM ${ratings} WHERE ${ratings.songId} = ${songs.id})`,
+        userRating: session ? sql<number>`(SELECT ${ratings.score} FROM ${ratings} WHERE ${ratings.songId} = ${songs.id} AND ${ratings.userId} = ${session.user.id})` : sql<number>`null`,
     })
         .from(songs)
         .leftJoin(users, eq(songs.authorId, users.id))
@@ -318,6 +320,40 @@ app.post('/:id/favorite', async (c) => {
         await db.insert(favorites).values({ userId: session.user.id, songId: id });
         return c.json({ success: true, isFavorited: true });
     }
+});
+
+// POST /api/songs/:id/rate - Rate Song
+app.post('/:id/rate', async (c) => {
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!session) return c.json({ success: false, error: "Unauthorized" }, 401);
+
+    const id = c.req.param('id');
+    const { score } = await c.req.json();
+
+    if (!score || score < 1 || score > 5) {
+        return c.json({ success: false, error: "Invalid score" }, 400);
+    }
+
+    // Check if previous rating exists
+    const [existing] = await db.select()
+        .from(ratings)
+        .where(and(eq(ratings.userId, session.user.id), eq(ratings.songId, id)))
+        .limit(1);
+
+    if (existing) {
+        await db.update(ratings)
+            .set({ score })
+            .where(and(eq(ratings.userId, session.user.id), eq(ratings.songId, id)));
+    } else {
+        await db.insert(ratings).values({ userId: session.user.id, songId: id, score });
+    }
+
+    // Calculate new average
+    const [avgResult] = await db.select({ average: sql<number>`AVG(${ratings.score})::numeric(10,1)` })
+        .from(ratings)
+        .where(eq(ratings.songId, id));
+
+    return c.json({ success: true, averageRating: avgResult?.average || score, userRating: score });
 });
 
 // POST /api/songs/:id/play - Increment Play Count

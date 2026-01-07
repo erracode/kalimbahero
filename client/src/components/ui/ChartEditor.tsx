@@ -236,7 +236,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
             time: snappedTime,
             duration: noteDuration,
             keyIndex,
-            note: key.note,
+            note: key.noteName, // Using noteName as 'note'
             frequency: key.frequency,
           };
           onNotesChange([...notes, newNote].sort((a, b) => a.time - b.time));
@@ -358,7 +358,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         time: snappedTime,
         duration: noteDuration,
         keyIndex,
-        note: key.note,
+        note: key.noteName, // Using noteName as 'note'
         frequency: key.frequency,
       };
       onNotesChange([...notes, newNote].sort((a, b) => a.time - b.time));
@@ -500,7 +500,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
 
           // Move all selected notes by the same delta
           onNotesChange(notes.map(n => {
-            if (notesToMove.includes(n.id)) {
+            if (n.id && notesToMove.includes(n.id)) {
               const finalKeyIndex = Math.max(0, Math.min(TOTAL_LANES - 1, n.keyIndex + deltaKey));
               const finalTime = Math.max(0, n.time + deltaTime);
               const key = KALIMBA_KEYS[finalKeyIndex];
@@ -508,7 +508,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
                 ...n,
                 keyIndex: finalKeyIndex,
                 time: finalTime,
-                note: key.note,
+                note: key.noteName,
                 frequency: key.frequency,
               };
             }
@@ -524,7 +524,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
               ...n,
               keyIndex,
               time: Math.max(0, time),
-              note: key.note,
+              note: key.noteName,
               frequency: key.frequency,
             };
           }
@@ -612,12 +612,13 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
           notes.forEach(note => {
             // Only play if we haven't played this note yet and playhead just crossed its start time
             // Handle notes at time 0 by checking if we're starting playback or if time crossed
-            const shouldPlay = !playedNotesRef.current.has(note.id) &&
+            const noteId = note.id;
+            const shouldPlay = noteId && !playedNotesRef.current.has(noteId) &&
               newTime >= note.time &&
               (prevTime < note.time || (note.time === startPlayhead && newTime >= startPlayhead));
 
-            if (shouldPlay) {
-              playedNotesRef.current.add(note.id);
+            if (shouldPlay && noteId) {
+              playedNotesRef.current.add(noteId);
               playNote(note.keyIndex).catch(console.error);
             }
           });
@@ -657,7 +658,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
 
   // Delete selected notes
   const deleteSelectedNotes = useCallback(() => {
-    onNotesChange(notes.filter(n => !selectedNotes.has(n.id)));
+    onNotesChange(notes.filter(n => n.id ? !selectedNotes.has(n.id) : true));
     setSelectedNotes(new Set());
   }, [notes, selectedNotes, onNotesChange]);
 
@@ -807,12 +808,12 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
       onMouseLeave={handleMouseUp}
     >
       {/* Toolbar */}
-      <div className="flex items-center gap-3 p-3 bg-black/40 border-b border-white/10 flex-wrap">
+      <div className="flex items-center gap-3 p-3 bg-black/60 border-b border-white/10 flex-wrap backdrop-blur-sm">
         {/* Playback controls */}
-        <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-white/10 border border-white/10 rounded-lg p-1">
           <button
             onClick={() => setPlayhead(0)}
-            className="p-2 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
             title="Go to start (Home)"
           >
             <SkipBack className="w-4 h-4" />
@@ -820,8 +821,8 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
           <button
             onClick={() => setIsPlaying(!isPlaying)}
             className={`p-2 rounded transition-colors cursor-pointer ${isPlaying
-              ? 'bg-orange-500 text-white hover:bg-orange-600'
-              : 'bg-cyan-500 text-white hover:bg-cyan-600'
+              ? 'bg-orange-500 text-white hover:bg-orange-600 shadow-lg shadow-orange-500/20'
+              : 'bg-cyan-500 text-white hover:bg-cyan-600 shadow-lg shadow-cyan-500/20'
               }`}
             title="Play/Pause (Space)"
           >
@@ -830,23 +831,23 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         </div>
 
         {/* Time display */}
-        <div className="px-3 py-1.5 bg-black/40 rounded-lg font-mono text-sm text-cyan-400 min-w-[90px] text-center">
+        <div className="px-3 py-1.5 bg-black/60 border border-white/10 rounded-lg font-mono text-sm text-cyan-400 min-w-[90px] text-center shadow-inner">
           {Math.floor(playhead / 60)}:{String(Math.floor(playhead % 60)).padStart(2, '0')}.
           {String(Math.floor((playhead % 1) * 100)).padStart(2, '0')}
         </div>
 
         {/* Time Signature control (determines grid divisions) */}
         {onTimeSignatureChange && (
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
-            <span className="px-2 text-xs text-white/50">Time Sig:</span>
+          <div className="flex items-center gap-1 bg-white/10 border border-white/10 rounded-lg p-1">
+            <span className="px-2 text-xs text-white/70 font-bold uppercase">Time Sig</span>
             <Select
               value={timeSignature}
               onValueChange={(value) => onTimeSignatureChange(value as TimeSignature)}
             >
-              <SelectTrigger className="w-[80px] h-8 bg-white/10 border-white/20 text-white font-mono text-sm hover:bg-white/15 focus:ring-cyan-500">
+              <SelectTrigger className="w-[80px] h-8 bg-black/40 border-white/20 text-white font-mono text-sm hover:bg-white/10 focus:ring-cyan-500">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-slate-800 border-white/20">
+              <SelectContent className="bg-[#111] border-white/20">
                 <SelectItem value="4/4" className="text-white hover:bg-white/10 cursor-pointer">4/4</SelectItem>
                 <SelectItem value="3/4" className="text-white hover:bg-white/10 cursor-pointer">3/4</SelectItem>
                 <SelectItem value="2/4" className="text-white hover:bg-white/10 cursor-pointer">2/4</SelectItem>
@@ -856,11 +857,11 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         )}
 
         {/* Playback speed control (multiplier based on BPM) */}
-        <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
-          <span className="px-2 text-xs text-white/50">Speed:</span>
+        <div className="flex items-center gap-1 bg-white/10 border border-white/10 rounded-lg p-1">
+          <span className="px-2 text-xs text-white/70 font-bold uppercase">Speed</span>
           <button
             onClick={() => setTempo(Math.max(30, tempo - 10))}
-            className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
             title="Decrease playback speed by 10 BPM"
           >
             <Minus className="w-3 h-3" />
@@ -871,24 +872,24 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
             max="200"
             value={tempo}
             onChange={(e) => setTempo(Math.max(30, Math.min(200, Number(e.target.value) || 120)))}
-            className="w-16 px-2 py-0.5 text-sm text-white font-mono text-center bg-white/10 border-white/20 focus:border-cyan-500 h-8"
+            className="w-16 px-2 py-0.5 text-sm text-white font-mono text-center bg-black/40 border-white/20 focus:border-cyan-500 h-8"
           />
           <button
             onClick={() => setTempo(Math.min(200, tempo + 10))}
-            className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
             title="Increase playback speed by 10 BPM"
           >
             <Plus className="w-3 h-3" />
           </button>
-          <span className="px-2 text-xs text-white/40">BPM</span>
+          <span className="px-2 text-xs text-white/50">BPM</span>
         </div>
 
         {/* Beats control */}
-        <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
-          <span className="px-2 text-xs text-white/50">Beats:</span>
+        <div className="flex items-center gap-1 bg-white/10 border border-white/10 rounded-lg p-1">
+          <span className="px-2 text-xs text-white/70 font-bold uppercase">Beats</span>
           <button
             onClick={() => updateBeats(Math.max(4, totalBeats - 1))}
-            className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
             title="Remove 1 beat"
           >
             <Minus className="w-3 h-3" />
@@ -899,18 +900,18 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
             max="999"
             value={totalBeats}
             onChange={(e) => updateBeats(Number(e.target.value) || 4)}
-            className="w-14 px-2 py-0.5 text-sm text-white font-mono text-center bg-white/10 border-white/20 focus:border-cyan-500 h-8"
+            className="w-14 px-2 py-0.5 text-sm text-white font-mono text-center bg-black/40 border-white/20 focus:border-cyan-500 h-8"
           />
           <button
             onClick={() => updateBeats(totalBeats + 1)}
-            className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
             title="Add 1 beat"
           >
             <Plus className="w-3 h-3" />
           </button>
           <button
             onClick={() => updateBeats(totalBeats + 8)}
-            className="px-2 py-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors text-xs font-semibold cursor-pointer"
+            className="px-2 py-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors text-xs font-semibold cursor-pointer"
             title="Add 8 beats"
           >
             +8
@@ -918,18 +919,18 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         </div>
 
         {/* Zoom controls */}
-        <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-white/10 border border-white/10 rounded-lg p-1">
           <button
             onClick={() => setZoom(z => Math.max(MIN_ZOOM, z - 0.25))}
-            className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
             title="Zoom out (-)"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-          <span className="px-2 text-xs text-white/60 min-w-[45px] text-center">{Math.round(zoom * 100)}%</span>
+          <span className="px-2 text-xs text-white/80 min-w-[45px] text-center font-mono">{Math.round(zoom * 100)}%</span>
           <button
             onClick={() => setZoom(z => Math.min(MAX_ZOOM, z + 0.25))}
-            className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
             title="Zoom in (+)"
           >
             <ZoomIn className="w-4 h-4" />
@@ -937,14 +938,14 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         </div>
 
         {/* Auto-scroll checkbox */}
-        <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-1.5">
+        <div className="flex items-center gap-2 bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 h-10">
           <Checkbox
             id="auto-scroll"
             checked={autoScroll}
             onCheckedChange={(checked) => setAutoScroll(checked === true)}
-            className="border-white/20 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500"
+            className="border-white/30 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500"
           />
-          <label htmlFor="auto-scroll" className="text-xs text-white/70 cursor-pointer select-none">
+          <label htmlFor="auto-scroll" className="text-xs text-white/80 cursor-pointer select-none font-bold uppercase tracking-wide">
             Auto-scroll
           </label>
         </div>
@@ -952,7 +953,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         <div className="flex-1" />
 
         {/* Note count */}
-        <div className="flex items-center gap-2 text-sm text-white/50 px-2">
+        <div className="flex items-center gap-2 text-sm text-white/60 px-2 font-mono">
           <Music className="w-4 h-4" />
           <span>{notes.length} notes</span>
         </div>
@@ -1061,7 +1062,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
               const notation = getKeyDisplayLabel(note.keyIndex);
               // Calculate note size based on its duration relative to beat
               const gridCellHeight = (BEAT_HEIGHT * zoom) / gridDivision;
-              const noteHeight = Math.max(18, Math.min(gridCellHeight - 1, (note.duration / beatDuration) * BEAT_HEIGHT * zoom));
+              const noteHeight = Math.max(18, Math.min(gridCellHeight - 1, ((note.duration || 0) / beatDuration) * BEAT_HEIGHT * zoom));
 
               // Align note perfectly with grid cell (same calculation as highlight)
               // Calculate which cell this note belongs to based on time
@@ -1072,8 +1073,8 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
               // Center note vertically in the cell
               const y = cellTopY + (gridCellHeight / 2) - (noteHeight / 2);
               const x = note.keyIndex * LANE_WIDTH;
-              const isSelected = selectedNotes.has(note.id);
-              const isBeingDragged = draggingNote === note.id;
+              const isSelected = note.id ? selectedNotes.has(note.id) : false;
+              const isBeingDragged = note.id && draggingNote === note.id;
 
               return (
                 <motion.div
@@ -1097,13 +1098,16 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
                   data-note-id={note.id}
                   onMouseDown={(e) => {
                     e.stopPropagation();
+                    const noteId = note.id;
+                    if (!noteId) return;
+
                     // Handle right click to delete immediately
                     if (e.button === 2) {
                       setIsRightMouseDown(true);
-                      onNotesChange(notes.filter(n => n.id !== note.id));
+                      onNotesChange(notes.filter(n => n.id !== noteId));
                       return;
                     }
-                    handleNoteDragStart(note.id, e);
+                    handleNoteDragStart(noteId, e);
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -1115,14 +1119,15 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
                     e.stopPropagation();
                     // Handle selection only after drag completes
                     // Click without drag will delete in mouseUp (left click only)
-                    if (hasDragged) {
+                    if (hasDragged && note.id) {
                       // Select this note (toggle if already selected)
+                      const noteId = note.id;
                       setSelectedNotes(prev => {
                         const next = new Set(prev);
-                        if (next.has(note.id)) {
-                          next.delete(note.id);
+                        if (next.has(noteId)) {
+                          next.delete(noteId);
                         } else {
-                          next.add(note.id);
+                          next.add(noteId);
                         }
                         return next;
                       });
@@ -1197,14 +1202,16 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
       </div>
 
       {/* Status bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-black/30 border-t border-white/10 text-xs text-white/40">
-        <div className="flex items-center gap-4">
-          <span>BPM: {bpm}</span>
-          <span>Duration: {Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, '0')}</span>
+      <div className="flex items-center justify-between px-6 py-2 bg-black/60 border-t border-white/10 text-xs text-white/60 font-medium backdrop-blur-sm">
+        <div className="flex items-center gap-6">
+          <span className="flex items-center gap-2"><span className="text-cyan-400">BPM:</span> {bpm}</span>
+          <span className="flex items-center gap-2"><span className="text-cyan-400">Duration:</span> {Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, '0')}</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span>Left click: Add • Right click: Delete • Hold & drag: Add/Delete continuously • Drag note: Move</span>
-          <span>Space: Play/Pause</span>
+        <div className="flex items-center gap-6 opacity-60 hover:opacity-100 transition-opacity">
+          <span><span className="text-white">L-Click</span> Add</span>
+          <span><span className="text-white">R-Click</span> Delete</span>
+          <span><span className="text-white">Hold</span> Continuous</span>
+          <span><span className="text-white">Space</span> Play/Pause</span>
         </div>
       </div>
     </div>
