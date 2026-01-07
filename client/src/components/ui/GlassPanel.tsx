@@ -48,7 +48,7 @@ export const GlassPanel: React.FC<GlassPanelProps> = ({
   return (
     <motion.div
       className={cn(
-        'relative rounded-2xl border',
+        'relative corner-squircle border',
         blurMap[blur],
         paddingMap[padding],
         variantStyles[variant],
@@ -63,8 +63,8 @@ export const GlassPanel: React.FC<GlassPanelProps> = ({
       {...motionProps}
     >
       {/* Inner highlight */}
-      <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
-      
+      <div className="absolute inset-0 corner-squircle bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
+
       {/* Content */}
       <div className="relative z-10">{children}</div>
     </motion.div>
@@ -115,15 +115,15 @@ export const GlassCard: React.FC<GlassCardProps> = ({
             {icon}
           </div>
         )}
-        
+
         {title && (
           <h3 className="text-lg font-bold text-white">{title}</h3>
         )}
-        
+
         {subtitle && (
           <p className="text-sm text-white/60">{subtitle}</p>
         )}
-        
+
         {children}
       </div>
     </GlassPanel>

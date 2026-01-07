@@ -83,6 +83,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   const [duration, setDuration] = useState(initialSong?.duration || 30);
   const [isPublic, setIsPublic] = useState(false); // Default to private cloud save
   const [syncToCloud, setSyncToCloud] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState(initialSong?.youtubeUrl || '');
   const [jsonOutput, setJsonOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
@@ -106,6 +107,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setTimeSignature(initialSong.timeSignature || '4/4');
       setIsPublic(initialSong.isPublic || false);
       setSyncToCloud(initialSong.isCloud || false);
+      setYoutubeUrl(initialSong.youtubeUrl || '');
       setError(null);
       setJsonOutput('');
       setIsLoaded(true);
@@ -122,6 +124,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setNotation('');
       setNotes([]);
       setDuration(30);
+      setYoutubeUrl('');
       setError(null);
       setJsonOutput('');
       setIsLoaded(true);
@@ -142,6 +145,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       notation: editorMode === 'text' ? notation : notesToNotation(notes, bpm, timeSignature),
       notes,
       duration: editorMode === 'chart' ? Math.max(duration, ...notes.map(n => n.time + (n.duration || 0))) : duration,
+      youtubeUrl,
     };
   }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode]);
 
@@ -151,7 +155,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       const state = getCurrentSongState();
       onChange(state);
     }
-  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, isLoaded, onChange, getCurrentSongState]);
+  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, isLoaded, onChange, getCurrentSongState, youtubeUrl]);
 
   // Sync notes from notation when switching to chart mode
   const handleModeChange = useCallback((mode: EditorMode) => {
@@ -250,11 +254,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       isCloud: syncToCloud,
       isPublic: isPublic,
       cloudId: initialSong?.cloudId,
+      youtubeUrl,
     };
 
     setError(null);
     return song;
-  }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong, syncToCloud, isPublic]);
+  }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong, syncToCloud, isPublic, youtubeUrl]);
 
   // Handle test play
   const handleTestPlay = () => {
@@ -295,6 +300,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         setNotation(song.notation || '');
         setNotes(song.notes || []);
         setDuration(song.duration || 30);
+        setYoutubeUrl(song.youtubeUrl || '');
         setError(null);
       } else {
         setError('Invalid JSON format');

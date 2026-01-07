@@ -1,7 +1,4 @@
-// ============================================
-// Kalimba Hero - Neon Button Component
-// ============================================
-
+import React from 'react';
 import { motion, type HTMLMotionProps } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -78,11 +75,19 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
   return (
     <motion.button
       className={cn(
-        'relative inline-flex items-center justify-center font-bold rounded-xl',
+        // Shape & Layout
+        'relative inline-flex items-center justify-center font-bold tracking-wider',
+        'transform-gpu skew-x-[-12deg]', // The Skew
+        'rounded-none', // Sharp
+
+        // Colors
         'bg-gradient-to-b',
         colors.bg,
         colors.text,
+
+        // Size
         sizeStyles[size],
+
         fullWidth && 'w-full',
         disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
         className
@@ -92,35 +97,34 @@ export const NeonButton: React.FC<NeonButtonProps> = ({
           ? 'none'
           : `0 0 20px ${colors.glow}50, 0 0 40px ${colors.glow}30, inset 0 1px 1px rgba(255,255,255,0.3)`,
       }}
+      initial={{ skewX: -12 }}
+      animate={{ skewX: -12 }}
       whileHover={
         disabled
           ? {}
           : {
             scale: 1.05,
+            skewX: -12,
             boxShadow: `0 0 30px ${colors.glow}70, 0 0 60px ${colors.glow}50, inset 0 1px 1px rgba(255,255,255,0.3)`,
           }
       }
-      whileTap={disabled ? {} : { scale: 0.95 }}
+      whileTap={disabled ? {} : { scale: 0.95, skewX: -12 }}
       disabled={disabled}
       {...motionProps}
     >
       {/* Shine effect */}
-      <div className="absolute inset-0 rounded-xl bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent pointer-events-none h-1/2" />
 
-      {/* Icon */}
-      {icon && <span className="relative z-10">{icon}</span>}
+      {/* Content Wrapper - Unskewed */}
+      <div className="flex items-center gap-inherit skew-x-[12deg]">
+        {/* Icon */}
+        {icon && <span className="relative z-10 mr-2">{icon}</span>}
 
-      {/* Text */}
-      <span className="relative z-10 font-semibold tracking-wide">{children}</span>
+        {/* Text */}
+        <span className="relative z-10 font-semibold tracking-wide">{children}</span>
+      </div>
     </motion.button>
   );
 };
 
 export default NeonButton;
-
-
-
-
-
-
-

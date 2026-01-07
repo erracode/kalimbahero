@@ -1,11 +1,8 @@
-// ============================================
-// Kalimba Hero - Home Screen Component
-// ============================================
 
+import React, { useState } from 'react';
+import { Library, Wrench, Mic2, User, LogIn } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Music, Wrench, Library, User, Mic2 } from 'lucide-react';
-import { GlassPanel } from './GlassPanel';
-import { NeonButton } from './NeonButton';
+import { cn } from '@/lib/utils';
 
 interface HomeScreenProps {
   onStartGame: () => void;
@@ -13,55 +10,9 @@ interface HomeScreenProps {
   onLibrary: () => void;
   onTuner: () => void;
   onLogin: () => void;
-  isLoggedIn?: boolean;
+  isLoggedIn: boolean;
   userName?: string | null;
 }
-
-// Kalimba icon SVG component
-const KalimbaIcon = () => (
-  <svg
-    viewBox="0 0 100 120"
-    className="w-24 h-28"
-    style={{ filter: 'drop-shadow(0 0 20px #00E5FF)' }}
-  >
-    {/* Body */}
-    <ellipse
-      cx="50"
-      cy="80"
-      rx="40"
-      ry="35"
-      fill="none"
-      stroke="#00E5FF"
-      strokeWidth="2"
-      opacity="0.8"
-    />
-    {/* Sound hole */}
-    <circle cx="50" cy="90" r="10" fill="none" stroke="#00E5FF" strokeWidth="1.5" opacity="0.6" />
-    {/* Tines */}
-    {[0, 1, 2, 3, 4, 5, 6].map((i) => {
-      const x = 25 + i * 8.3;
-      const height = 35 + Math.abs(i - 3) * 8;
-      return (
-        <motion.rect
-          key={i}
-          x={x}
-          y={50 - height + 40}
-          width="5"
-          height={height}
-          rx="2"
-          fill={`hsl(${180 + i * 20}, 100%, 60%)`}
-          opacity="0.9"
-          initial={{ scaleY: 0 }}
-          animate={{ scaleY: 1 }}
-          transition={{ delay: 0.1 * i, duration: 0.5, type: 'spring' }}
-          style={{ transformOrigin: 'bottom' }}
-        />
-      );
-    })}
-    {/* Bridge */}
-    <rect x="20" y="45" width="60" height="4" rx="2" fill="#FFD93D" opacity="0.8" />
-  </svg>
-);
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onStartGame,
@@ -69,147 +20,121 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onLibrary,
   onTuner,
   onLogin,
-  isLoggedIn = false,
-  userName = null,
+  isLoggedIn,
+  userName,
 }) => {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
+  const menuItems = [
+    { label: 'LIBRARY', icon: <Library className="w-6 h-6" />, action: onLibrary, variant: 'purple' as const, desc: 'Browse your song collection' },
+    { label: 'SONG BUILDER', icon: <Wrench className="w-6 h-6" />, action: onSongBuilder, variant: 'orange' as const, desc: 'Create and edit your own tracks' },
+    { label: 'TUNER', icon: <Mic2 className="w-6 h-6" />, action: onTuner, variant: 'green' as const, desc: 'Tune your real Kalimba' },
+    {
+      label: isLoggedIn ? (userName || 'PROFILE') : 'LOGIN',
+      icon: isLoggedIn ? <User className="w-6 h-6" /> : <LogIn className="w-6 h-6" />,
+      action: onLogin,
+      variant: 'pink' as const,
+      desc: isLoggedIn ? 'View your stats and settings' : 'Sign in to sync your progress'
+    },
+  ];
+
   return (
-    <motion.div
-      className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-8"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      {/* Title section */}
-      <motion.div
-        className="text-center mb-12"
-        initial={{ y: -50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2, type: 'spring' }}
-      >
-        <div className="flex justify-center mb-4">
-          <KalimbaIcon />
+    <div className="relative z-10 w-full h-screen flex overflow-hidden ui-overlay pointer-events-none">
+
+      {/* LEFT COLUMN: Main Menu (Skewed) */}
+      <div className="flex flex-col justify-center pl-16 pr-8 h-full w-[450px] relative pointer-events-auto">
+
+        {/* Menu Background Shape */}
+        <div className="absolute inset-y-0 left-[-100px] right-0 bg-black/40 backdrop-blur-md border-r border-white/10 skew-x-[-12deg] transform-origin-bottom-left" />
+
+        <div className="relative z-10 flex flex-col gap-6 transform skew-x-[-12deg]">
+          {/* Header */}
+          <div className="mb-8 pl-4">
+            <h1 className="text-6xl font-black text-white italic tracking-tighter drop-shadow-[0_0_15px_rgba(0,229,255,0.5)]">
+              KALIMBA<br />
+              <span className="text-cyan-400">HERO</span>
+            </h1>
+            <p className="text-white/60 font-bold tracking-[0.3em] text-sm mt-2 ml-1">
+              RHYTHM EVOLVED
+            </p>
+          </div>
+
+          {/* Menu Buttons */}
+          <div className="flex flex-col gap-3">
+            {menuItems.map((item, index) => (
+              <motion.button
+                key={item.label}
+                onClick={item.action}
+                onMouseEnter={() => setHoveredIndex(index)}
+                onMouseLeave={() => setHoveredIndex(null)}
+                className={cn(
+                  "group relative h-16 w-full flex items-center px-6 overflow-hidden transition-all duration-200 cursor-pointer",
+                  "bg-black/40 border border-white/10 hover:border-white/40",
+                  "rounded-none" // Sharp
+                )}
+                whileHover={{ x: 20, scale: 1.05 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {/* Hover Fill Effect */}
+                <div className={cn(
+                  "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r",
+                  item.variant === 'purple' && "from-purple-900/80 to-transparent",
+                  item.variant === 'orange' && "from-orange-900/80 to-transparent",
+                  item.variant === 'green' && "from-green-900/80 to-transparent",
+                  item.variant === 'pink' && "from-pink-900/80 to-transparent",
+                )} />
+
+                {/* Content */}
+                <div className="relative z-10 flex items-center justify-between w-full">
+                  <span className={cn(
+                    "text-2xl font-black italic tracking-wider transition-colors duration-200",
+                    hoveredIndex === index ? "text-white text-glow" : "text-white/70"
+                  )}>
+                    {item.label}
+                  </span>
+                  <span className={cn(
+                    "opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-x-4 group-hover:translate-x-0",
+                    item.variant === 'purple' && "text-purple-400",
+                    item.variant === 'orange' && "text-orange-400",
+                    item.variant === 'green' && "text-green-400",
+                    item.variant === 'pink' && "text-pink-400",
+                  )}>
+                    {item.icon}
+                  </span>
+                </div>
+              </motion.button>
+            ))}
+          </div>
         </div>
-        <h1
-          className="text-6xl md:text-7xl font-black tracking-tight"
-          style={{
-            background: 'linear-gradient(135deg, #00E5FF, #FF6B6B, #FFD93D)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            textShadow: '0 0 60px rgba(0, 229, 255, 0.3)',
-          }}
-        >
-          KALIMBA HERO
-        </h1>
-        <p className="text-white/60 mt-2 text-lg">
-          Master the 21 keys. Feel the rhythm.
-        </p>
-      </motion.div>
+      </div>
 
-      {/* Menu buttons */}
-      <motion.div
-        className="flex flex-wrap justify-center gap-4 md:gap-6"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.4, type: 'spring' }}
-      >
-        <NeonButton
-          variant="cyan"
-          size="lg"
-          icon={<Music className="w-5 h-5" />}
-          onClick={onStartGame}
-        >
-          START GAME
-        </NeonButton>
+      {/* RIGHT AREA: Description / Content */}
+      <div className="flex-1 flex flex-col justify-end pb-24 pr-16 items-end pointer-events-none">
+        <div className="w-[400px] text-right transform skew-x-[-12deg]">
+          <motion.div
+            key={hoveredIndex}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="bg-black/60 backdrop-blur-md p-6 border border-white/10 rounded-none skew-x-[-12deg]"
+          >
+            {hoveredIndex !== null ? (
+              <>
+                <h3 className="text-2xl font-black italic text-white mb-2">{menuItems[hoveredIndex].label}</h3>
+                <p className="text-lg text-white/80 font-medium leading-relaxed">
+                  {menuItems[hoveredIndex].desc}
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-bold text-white/50 mb-2">WELCOME</h3>
+                <p className="text-white/40">Hover over a menu item to see details.</p>
+              </>
+            )}
+          </motion.div>
+        </div>
+      </div>
 
-        <NeonButton
-          variant="orange"
-          size="lg"
-          icon={<Wrench className="w-5 h-5" />}
-          onClick={onSongBuilder}
-        >
-          SONG BUILDER
-        </NeonButton>
-
-        <NeonButton
-          variant="purple"
-          size="lg"
-          icon={<Library className="w-5 h-5" />}
-          onClick={onLibrary}
-        >
-          LIBRARY
-        </NeonButton>
-
-        <NeonButton
-          variant="pink"
-          size="lg"
-          icon={<Mic2 className="w-5 h-5" />}
-          onClick={onTuner}
-        >
-          TUNER
-        </NeonButton>
-
-        <NeonButton
-          variant="cyan"
-          size="lg"
-          icon={<User className="w-5 h-5" />}
-          onClick={onLogin}
-        >
-          {isLoggedIn ? (userName ? `HI, ${userName.toUpperCase()}` : "PROFILE") : "LOGIN"}
-        </NeonButton>
-      </motion.div>
-
-      {/* Feature cards */}
-      <motion.div
-        className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16 max-w-4xl w-full"
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.6 }}
-      >
-        <GlassPanel padding="md" className="text-center">
-          <div className="text-3xl mb-2">🎵</div>
-          <h3 className="text-white font-bold mb-1">Real-Time Detection</h3>
-          <p className="text-white/50 text-sm">
-            Play your real kalimba and see your notes detected instantly
-          </p>
-        </GlassPanel>
-
-        <GlassPanel padding="md" className="text-center">
-          <div className="text-3xl mb-2">🎮</div>
-          <h3 className="text-white font-bold mb-1">Guitar Hero Style</h3>
-          <p className="text-white/50 text-sm">
-            Watch notes fall and hit them at the perfect moment
-          </p>
-        </GlassPanel>
-
-        <GlassPanel padding="md" className="text-center">
-          <div className="text-3xl mb-2">🛠️</div>
-          <h3 className="text-white font-bold mb-1">Create Songs</h3>
-          <p className="text-white/50 text-sm">
-            Build your own songs with simple tablature notation
-          </p>
-        </GlassPanel>
-      </motion.div>
-
-      {/* Instructions hint */}
-      <motion.div
-        className="mt-12 text-center"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1 }}
-      >
-        <p className="text-white/30 text-sm">
-          Press <kbd className="px-2 py-1 bg-white/10 rounded text-white/50">Space</kbd> to start quickly
-        </p>
-      </motion.div>
-    </motion.div >
+    </div>
   );
 };
-
-export default HomeScreen;
-
-
-
-
-
-
-

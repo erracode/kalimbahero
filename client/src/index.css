@@ -1,16 +1,17 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@plugin "@toolwind/corner-shape";
 
 @custom-variant dark (&:is(.dark *));
 
 /* Kalimba Hero Theme - Neon Zen */
 :root {
-  --radius: 0.75rem;
-  
+  --radius: 0px;
+
   /* Dark theme colors */
   --background: #0f172a;
   --foreground: #f8fafc;
-  
+
   /* Neon accent colors */
   --neon-cyan: #00E5FF;
   --neon-pink: #FF6B6B;
@@ -19,12 +20,12 @@
   --neon-green: #6BCB77;
   --neon-purple: #9B59B6;
   --neon-blue: #4D96FF;
-  
+
   /* Glass effect colors */
   --glass-bg: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-shadow: rgba(0, 0, 0, 0.3);
-  
+
   /* UI colors */
   --card: rgba(30, 27, 75, 0.6);
   --card-foreground: #f8fafc;
@@ -45,10 +46,10 @@
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -74,11 +75,11 @@
   * {
     @apply border-border;
   }
-  
+
   html {
     scroll-behavior: smooth;
   }
-  
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -87,7 +88,7 @@
     min-height: 100vh;
     overflow-x: hidden;
   }
-  
+
   #root {
     min-height: 100vh;
     position: relative;
@@ -102,12 +103,12 @@
 
 ::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
+  border-radius: 0px;
 }
 
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+  border-radius: 0px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -128,7 +129,7 @@
 
 /* Glow text effect */
 .text-glow {
-  text-shadow: 
+  text-shadow:
     0 0 10px currentColor,
     0 0 20px currentColor,
     0 0 40px currentColor;
@@ -136,7 +137,7 @@
 
 /* Glow box effect */
 .box-glow {
-  box-shadow: 
+  box-shadow:
     0 0 20px var(--neon-cyan),
     0 0 40px var(--neon-cyan),
     inset 0 0 10px rgba(0, 229, 255, 0.1);
@@ -152,9 +153,12 @@
 
 /* Neon border animation */
 @keyframes neon-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 5px var(--neon-cyan), 0 0 10px var(--neon-cyan);
   }
+
   50% {
     box-shadow: 0 0 20px var(--neon-cyan), 0 0 40px var(--neon-cyan);
   }
@@ -170,10 +174,12 @@
     transform: scale(1);
     opacity: 1;
   }
+
   50% {
     transform: scale(1.5);
     opacity: 0.8;
   }
+
   100% {
     transform: scale(2);
     opacity: 0;
@@ -185,6 +191,7 @@
     transform: scale(1);
     opacity: 1;
   }
+
   100% {
     transform: scale(1.5);
     opacity: 0;
@@ -204,9 +211,11 @@
   0% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.2);
   }
+
   100% {
     transform: scale(1);
   }
@@ -218,9 +227,12 @@
 
 /* Floating particles background */
 @keyframes float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0) rotate(0deg);
   }
+
   50% {
     transform: translateY(-20px) rotate(180deg);
   }
@@ -232,9 +244,12 @@
 
 /* Star twinkle */
 @keyframes twinkle {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.3;
   }
+
   50% {
     opacity: 1;
   }
@@ -249,6 +264,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -276,10 +292,12 @@ kbd {
     transform: scale(0.5);
     opacity: 0;
   }
+
   50% {
     transform: scale(1.2);
     opacity: 1;
   }
+
   100% {
     transform: scale(1);
     opacity: 1;
@@ -313,7 +331,7 @@ kbd {
   pointer-events: none;
 }
 
-.ui-overlay > * {
+.ui-overlay>* {
   pointer-events: auto;
 }
 

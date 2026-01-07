@@ -72,6 +72,7 @@ export interface Song {
   likes?: number;
   isLiked?: boolean;
   isFavorited?: boolean;
+  youtubeUrl?: string;
 }
 
 // Real-time pitch detection result

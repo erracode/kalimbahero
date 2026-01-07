@@ -1,4 +1,3 @@
-
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -8,18 +7,19 @@ import { signIn, signUp } from '../lib/auth-client'
 import { useQueryClient } from '@tanstack/react-query'
 import { AUTH_QUERY_KEY } from '../hooks/useAuth'
 import { AuroraBackground } from '../components/ui/AuroraBackground'
-import { GlassPanel } from '../components/ui/GlassPanel'
 import { NeonButton } from '../components/ui/NeonButton'
 import { Input } from '../components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../components/ui/form'
-import { Loader2, Music, ArrowLeft } from 'lucide-react'
+import { Loader2, ArrowLeft, Gamepad2 } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { cn } from '@/lib/utils'
 
 // Validation Schemas
 const authSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  username: z.string().min(3, "Username must be at least 3 characters").optional(), // Only for signup
+  username: z.string().min(3, "Username must be at least 3 characters").optional(),
 })
 
 export const Route = createFileRoute('/auth')({
@@ -32,13 +32,11 @@ function AuthPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  // Sign In Form
   const signInForm = useForm<z.infer<typeof authSchema>>({
     resolver: zodResolver(authSchema),
     defaultValues: { email: '', password: '' },
   })
 
-  // Sign Up Form
   const signUpForm = useForm<z.infer<typeof authSchema>>({
     resolver: zodResolver(authSchema),
     defaultValues: { email: '', password: '', username: '' },
@@ -93,77 +91,95 @@ function AuthPage() {
   }
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden flex items-center justify-center p-4">
-      {/* Background Layer */}
-      <div className="absolute inset-0 z-0">
-        <AuroraBackground />
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="relative min-h-screen w-full overflow-hidden flex items-center justify-center p-4"
+    >
+      {/* Background Layer with Aurora & Grid */}
+      <div className="absolute inset-0 z-0 bg-black">
+        <div className="absolute inset-0 opacity-40">
+          <AuroraBackground />
+        </div>
+        <div className="absolute inset-0 bg-[url('/grid.png')] opacity-[0.05] pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/80" />
       </div>
 
       {/* Back Button */}
       <div className="absolute top-8 left-8 z-20">
         <NeonButton
-          variant="purple"
+          variant="cyan"
           size="sm"
           icon={<ArrowLeft className="w-4 h-4" />}
           onClick={() => navigate({ to: '/' })}
         >
-          Main Menu
+          Back to Menu
         </NeonButton>
       </div>
 
-      {/* Content Layer */}
-      <GlassPanel className="w-full max-w-md p-8 border-white/10 relative z-10 overflow-hidden">
-
-        {/* Decorative Header */}
-        <div className="text-center mb-8 relative z-10">
-          <div className="flex justify-center mb-4">
-            <div className="p-3 bg-cyan-500/20 rounded-full ring-2 ring-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
-              <Music className="w-8 h-8 text-cyan-400" />
+      {/* Content Layer - Single Clean Glass Card */}
+      <div className="w-full max-w-lg bg-black/60 backdrop-blur-xl border border-white/10 rounded-none p-10 relative z-10 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+        {/* Header */}
+        <div className="text-center mb-10">
+          <div className="flex justify-center mb-6">
+            <div className="p-5 bg-gradient-to-br from-cyan-900/20 to-purple-900/20 rounded-none border border-white/5 shadow-[0_0_20px_rgba(6,182,212,0.1)] transform rotate-45">
+              <Gamepad2 className="w-10 h-10 text-white transform -rotate-45" />
             </div>
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tighter drop-shadow-lg font-display">
-            KALIMBA <span className="text-cyan-400">HERO</span>
+          <h1 className="text-4xl font-black text-white italic tracking-tighter font-display uppercase mb-2">
+            Log <span className="text-cyan-400">In</span>
           </h1>
-          <p className="text-cyan-200/60 text-sm mt-2 font-medium tracking-wide">
-            JOIN THE REVOLUTION
+          <p className="text-white/40 text-xs font-bold tracking-[0.3em] uppercase">
+            Save your progress & tones
           </p>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 p-3 bg-red-500/20 border border-red-500/50 rounded-md text-red-200 text-sm text-center font-bold animate-pulse">
-            {error}
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-500/10 border-l-2 border-red-500 text-red-200 text-xs font-bold uppercase tracking-wide flex items-center gap-2"
+          >
+            <span>⚠️</span> {error}
+          </motion.div>
         )}
 
-        <Tabs defaultValue="login" className="w-full relative z-10">
-          <TabsList className="grid w-full grid-cols-2 mb-6 bg-black/40 border border-white/10">
-            <TabsTrigger value="login" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400 font-bold uppercase tracking-wider">
-              Login
+        <Tabs defaultValue="login" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-8 bg-black/40 border border-white/10 rounded-none skew-x-[-12deg] p-1 h-14">
+            <TabsTrigger
+              value="login"
+              className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/40 text-xs font-black italic uppercase tracking-widest rounded-none h-full transition-all cursor-pointer"
+            >
+              <span className="skew-x-[12deg]">Login</span>
             </TabsTrigger>
-            <TabsTrigger value="signup" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400 font-bold uppercase tracking-wider">
-              Sign Up
+            <TabsTrigger
+              value="signup"
+              className="data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/40 text-xs font-black italic uppercase tracking-widest rounded-none h-full transition-all cursor-pointer"
+            >
+              <span className="skew-x-[12deg]">Register</span>
             </TabsTrigger>
           </TabsList>
 
           {/* LOGIN TAB */}
-          <TabsContent value="login">
+          <TabsContent value="login" className="focus-visible:outline-none focus-visible:ring-0">
             <Form {...signInForm}>
-              <form onSubmit={signInForm.handleSubmit(onSignIn)} className="space-y-4">
+              <form onSubmit={signInForm.handleSubmit(onSignIn)} className="space-y-6">
                 <FormField
                   control={signInForm.control}
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-cyan-100/80 font-bold uppercase text-xs tracking-widest">Email</FormLabel>
+                      <FormLabel className="text-cyan-400 font-bold uppercase text-[10px] tracking-widest pl-1">Email</FormLabel>
                       <FormControl>
                         <Input
                           placeholder="hero@kalimba.com"
                           {...field}
-                          className="bg-black/30 border-white/10 focus:border-cyan-500/50 text-white placeholder:text-white/20 h-10 transition-all focus:ring-1 focus:ring-cyan-500/50"
+                          className="bg-black/40 border-white/10 focus:border-cyan-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-cyan-500/50"
                         />
                       </FormControl>
-                      <FormMessage className="text-red-400" />
+                      <FormMessage className="text-red-400 text-xs font-bold uppercase" />
                     </FormItem>
                   )}
                 />
@@ -172,49 +188,50 @@ function AuthPage() {
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-cyan-100/80 font-bold uppercase text-xs tracking-widest">Password</FormLabel>
+                      <FormLabel className="text-cyan-400 font-bold uppercase text-[10px] tracking-widest pl-1">Password</FormLabel>
                       <FormControl>
                         <Input
                           type="password"
                           placeholder="••••••••"
                           {...field}
-                          className="bg-black/30 border-white/10 focus:border-cyan-500/50 text-white placeholder:text-white/20 h-10 transition-all focus:ring-1 focus:ring-cyan-500/50"
+                          className="bg-black/40 border-white/10 focus:border-cyan-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-cyan-500/50"
                         />
                       </FormControl>
-                      <FormMessage className="text-red-400" />
+                      <FormMessage className="text-red-400 text-xs font-bold uppercase" />
                     </FormItem>
                   )}
                 />
 
                 <NeonButton
                   variant="cyan"
-                  className="w-full mt-6 h-12 text-lg font-black tracking-widest"
+                  fullWidth
+                  className="mt-8 h-14 text-xl font-black italic tracking-widest uppercase hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-[0_0_20px_rgba(6,182,212,0.2)]"
                   disabled={isLoading}
                 >
-                  {isLoading ? <Loader2 className="animate-spin mr-2" /> : "ENTER STAGE"}
+                  {isLoading ? <Loader2 className="animate-spin" /> : "ENTER STUDIO"}
                 </NeonButton>
               </form>
             </Form>
           </TabsContent>
 
           {/* SIGNUP TAB */}
-          <TabsContent value="signup">
+          <TabsContent value="signup" className="focus-visible:outline-none focus-visible:ring-0">
             <Form {...signUpForm}>
-              <form onSubmit={signUpForm.handleSubmit(onSignUp)} className="space-y-4">
+              <form onSubmit={signUpForm.handleSubmit(onSignUp)} className="space-y-6">
                 <FormField
                   control={signUpForm.control}
                   name="username"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-purple-100/80 font-bold uppercase text-xs tracking-widest">Username</FormLabel>
+                      <FormLabel className="text-purple-400 font-bold uppercase text-[10px] tracking-widest pl-1">Stage Name</FormLabel>
                       <FormControl>
                         <Input
                           placeholder="KalimbaMaster"
                           {...field}
-                          className="bg-black/30 border-white/10 focus:border-purple-500/50 text-white placeholder:text-white/20 h-10 transition-all focus:ring-1 focus:ring-purple-500/50"
+                          className="bg-black/40 border-white/10 focus:border-purple-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-purple-500/50"
                         />
                       </FormControl>
-                      <FormMessage className="text-red-400" />
+                      <FormMessage className="text-red-400 text-xs font-bold uppercase" />
                     </FormItem>
                   )}
                 />
@@ -223,15 +240,15 @@ function AuthPage() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-purple-100/80 font-bold uppercase text-xs tracking-widest">Email</FormLabel>
+                      <FormLabel className="text-purple-400 font-bold uppercase text-[10px] tracking-widest pl-1">Email</FormLabel>
                       <FormControl>
                         <Input
                           placeholder="you@rockstar.com"
                           {...field}
-                          className="bg-black/30 border-white/10 focus:border-purple-500/50 text-white placeholder:text-white/20 h-10 transition-all focus:ring-1 focus:ring-purple-500/50"
+                          className="bg-black/40 border-white/10 focus:border-purple-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-purple-500/50"
                         />
                       </FormControl>
-                      <FormMessage className="text-red-400" />
+                      <FormMessage className="text-red-400 text-xs font-bold uppercase" />
                     </FormItem>
                   )}
                 />
@@ -240,33 +257,33 @@ function AuthPage() {
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-purple-100/80 font-bold uppercase text-xs tracking-widest">Password</FormLabel>
+                      <FormLabel className="text-purple-400 font-bold uppercase text-[10px] tracking-widest pl-1">Password</FormLabel>
                       <FormControl>
                         <Input
                           type="password"
                           placeholder="••••••••"
                           {...field}
-                          className="bg-black/30 border-white/10 focus:border-purple-500/50 text-white placeholder:text-white/20 h-10 transition-all focus:ring-1 focus:ring-purple-500/50"
+                          className="bg-black/40 border-white/10 focus:border-purple-500 text-white placeholder:text-white/10 h-12 rounded-none transition-all focus:ring-1 focus:ring-purple-500/50"
                         />
                       </FormControl>
-                      <FormMessage className="text-red-400" />
+                      <FormMessage className="text-red-400 text-xs font-bold uppercase" />
                     </FormItem>
                   )}
                 />
 
                 <NeonButton
                   variant="purple"
-                  className="w-full mt-6 h-12 text-lg font-black tracking-widest"
+                  fullWidth
+                  className="mt-8 h-14 text-xl font-black italic tracking-widest uppercase hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-[0_0_20px_rgba(168,85,247,0.2)]"
                   disabled={isLoading}
                 >
-                  {isLoading ? <Loader2 className="animate-spin mr-2" /> : "START CAREER"}
+                  {isLoading ? <Loader2 className="animate-spin" /> : "JOIN BAND"}
                 </NeonButton>
               </form>
             </Form>
           </TabsContent>
         </Tabs>
-
-      </GlassPanel>
-    </div>
+      </div>
+    </motion.div>
   )
 }
