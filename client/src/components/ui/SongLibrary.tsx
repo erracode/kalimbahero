@@ -246,7 +246,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   )}
                 >
                   <Box className="w-4 h-4 skew-x-[12deg]" />
-                  <span className="skew-x-[12deg]">3D Mode</span>
+                  <span className="skew-x-[12deg]">Hero Play</span>
                 </button>
                 <button
                   onClick={() => onGameModeChange('tab')}
@@ -311,13 +311,39 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                 key={diff}
                 onClick={() => setFilter(diff)}
                 className={cn(
-                  "px-6 py-2 text-[10px] font-black italic uppercase tracking-widest rounded-none skew-x-[-12deg] transition-all border cursor-pointer",
+                  "relative group px-6 py-2 rounded-none skew-x-[-12deg] border transition-all duration-300 overflow-hidden cursor-pointer",
+                  // Base Styles & Borders
                   filter === diff
-                    ? "bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                    : "text-white/40 border-white/5 hover:bg-white/5 hover:text-white hover:border-white/10"
+                    ? "text-black scale-105 shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                    : "bg-black/40 text-white/40 border-white/10 hover:border-white/30",
+
+                  // Active State Specific Color Borders/Shadows
+                  filter === diff && diff === 'all' && "bg-white border-white",
+                  filter === diff && diff === 'easy' && "bg-green-400 border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.5)]",
+                  filter === diff && diff === 'medium' && "bg-yellow-400 border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.5)]",
+                  filter === diff && diff === 'hard' && "bg-orange-500 border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.5)]",
+                  filter === diff && diff === 'expert' && "bg-purple-500 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.5)]",
                 )}
               >
-                <span className="skew-x-[12deg] block">{diff}</span>
+                {/* Hover Fill Effect (Gradient) */}
+                <div className={cn(
+                  "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r",
+                  diff === 'all' && "from-white/20 to-transparent",
+                  diff === 'easy' && "from-green-500/40 to-transparent",
+                  diff === 'medium' && "from-yellow-500/40 to-transparent",
+                  diff === 'hard' && "from-orange-500/40 to-transparent",
+                  diff === 'expert' && "from-purple-500/40 to-transparent",
+                  // Hide hover effect if active (since active has solid bg)
+                  filter === diff && "hidden"
+                )} />
+
+                {/* Text Content */}
+                <span className={cn(
+                  "relative z-10 skew-x-[12deg] block font-black italic uppercase text-xs tracking-wider transition-colors duration-200",
+                  filter !== diff && "group-hover:text-white"
+                )}>
+                  {diff}
+                </span>
               </button>
             ))}
           </div>

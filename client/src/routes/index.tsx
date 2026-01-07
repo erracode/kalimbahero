@@ -6,7 +6,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { HomeScreen } from "@/components/ui/HomeScreen";
 import { AuroraBackground } from "@/components/ui/AuroraBackground";
 import { KalimbaScene } from "@/components/game/KalimbaScene";
-import { useAuth } from "@/hooks/useAuth";
 import { useBuilderStore } from "@/stores/builderStore";
 
 export const Route = createFileRoute("/")({
@@ -24,7 +23,6 @@ export const Route = createFileRoute("/")({
 
 function HomeRoute() {
   const navigate = useNavigate();
-  const { session } = useAuth();
   const { setEditingSong } = useBuilderStore();
 
   const handleStartGame = () => {
@@ -36,13 +34,7 @@ function HomeRoute() {
     navigate({ to: "/song-builder" });
   };
 
-  const handleLogin = () => {
-    if (session) {
-      navigate({ to: "/profile" });
-    } else {
-      navigate({ to: "/auth" });
-    }
-  };
+
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -65,9 +57,6 @@ function HomeRoute() {
         onSongBuilder={handleCreateNew}
         onLibrary={() => navigate({ to: "/library" })}
         onTuner={() => navigate({ to: "/tuner" })}
-        onLogin={handleLogin}
-        isLoggedIn={!!session}
-        userName={session?.user?.name}
       />
     </div>
   );
