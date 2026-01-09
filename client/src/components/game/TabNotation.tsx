@@ -5,6 +5,8 @@ import type { Song, SongNote } from '@/types/game';
 import { getKeyColor, getKeyDisplayLabel } from '@/utils/frequencyMap';
 import { cn } from '@/lib/utils';
 import { NeonButton } from '@/components/ui/NeonButton';
+import { initKalimbaAudio, playChord, disposeKalimbaAudio } from '@/utils/kalimbaAudio';
+import * as Tone from 'tone';
 
 interface TabNotationProps {
     song: Song;
@@ -51,14 +53,18 @@ const TabNote = ({ note, isHighlighted }: { note: SongNote; isHighlighted: boole
 };
 
 // Chord display
-const ChordDisplay = ({ notes, isHighlighted }: { notes: SongNote[]; isHighlighted: boolean }) => (
+const ChordDisplay = ({ notes, isHighlighted, activeNoteIds }: { notes: SongNote[]; isHighlighted: boolean; activeNoteIds?: Set<string> }) => (
     <div className={cn(
         "flex gap-1 items-center px-1.5 py-1 rounded-xl transition-all duration-300",
         isHighlighted ? "bg-white/10" : "bg-white/5"
     )}>
         <span className="text-white/20 text-xl font-light">(</span>
         {notes.map((note, i) => (
-            <TabNote key={note.id || i} note={note} isHighlighted={isHighlighted} />
+            <TabNote
+                key={note.id || i}
+                note={note}
+                isHighlighted={isHighlighted || (note.id ? activeNoteIds?.has(note.id) ?? false : false)}
+            />
         ))}
         <span className="text-white/20 text-xl font-light">)</span>
     </div>
@@ -76,13 +82,30 @@ export const TabNotation: React.FC<TabNotationProps> = ({ song, className }) => 
     const [isPlaying, setIsPlaying] = useState(false);
     const [scrollSpeed, setScrollSpeed] = useState(40); // pixels per second
     const [autoScroll] = useState(true);
+    const [activeNoteIds, setActiveNoteIds] = useState<Set<string>>(new Set());
 
     const animationFrameRef = useRef<number | null>(null);
     const lastTimeRef = useRef<number>(0);
     const accumulatedScrollRef = useRef<number>(0);
     const speedRef = useRef(scrollSpeed);
 
+    // Playback Refs
+    const startTimeRef = useRef<number>(0);
+    const pausedTimeRef = useRef<number>(0);
+    const nextNoteIndexRef = useRef<number>(0);
+
     useEffect(() => { speedRef.current = scrollSpeed; }, [scrollSpeed]);
+
+    // Initialize Audio on Mount
+    useEffect(() => {
+        return () => {
+            disposeKalimbaAudio();
+            setIsPlaying(false);
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+            Tone.Transport.stop();
+            Tone.Transport.cancel();
+        };
+    }, []);
 
     const { lines } = useMemo(() => {
         const grouped = new Map<number, SongNote[]>();
@@ -110,12 +133,103 @@ export const TabNotation: React.FC<TabNotationProps> = ({ song, className }) => 
 
     const beatDuration = 60 / song.bpm;
 
-    const animate = useCallback((currentTime: number) => {
-        if (!lastTimeRef.current) lastTimeRef.current = currentTime;
-        const deltaTime = (currentTime - lastTimeRef.current) / 1000;
-        lastTimeRef.current = currentTime;
+    // Flatten notes for playback scheduling
+    const sortedNotes = useMemo(() => {
+        return [...song.notes].sort((a, b) => a.time - b.time);
+    }, [song.notes]);
 
-        if (containerRef.current && isPlaying && autoScroll) {
+    const handleTogglePlay = async () => {
+        if (!isPlaying) {
+            await initKalimbaAudio();
+            await Tone.start();
+
+            // Start Playback
+            startTimeRef.current = Tone.now() - pausedTimeRef.current;
+            setIsPlaying(true);
+            lastTimeRef.current = performance.now();
+        } else {
+            // Pause
+            pausedTimeRef.current = Tone.now() - startTimeRef.current;
+            setIsPlaying(false);
+            setActiveNoteIds(new Set()); // Clear highlights
+        }
+    };
+
+    const handleReset = () => {
+        if (containerRef.current) containerRef.current.scrollTop = 0;
+        setIsPlaying(false);
+        lastTimeRef.current = 0;
+        accumulatedScrollRef.current = 0;
+        pausedTimeRef.current = 0;
+        nextNoteIndexRef.current = 0;
+        setActiveNoteIds(new Set());
+        // setPlaybackTime(0);
+    };
+
+    // Main Loop
+    const animate = useCallback((time: number) => {
+        if (!isPlaying) return;
+
+        // 1. Calculate Time
+        const now = Tone.now();
+        const trackTime = now - startTimeRef.current;
+        // setPlaybackTime(trackTime);
+
+        // 2. Play Audio & Highlight
+        // Look ahead a bit for audio scheduling if needed, but for simple visualization check current time
+        // We'll process all notes that should have played by now
+        let newActiveIds = new Set(activeNoteIds);
+        let hasUpdates = false;
+
+        while (true) {
+            const index = nextNoteIndexRef.current;
+            if (index >= sortedNotes.length) break;
+
+            const note = sortedNotes[index];
+            if (note.time <= trackTime) {
+                // Play Note if we just reached it (approx)
+                // Actually with RAF this might trigger multiple times or late. 
+                // Better logic: Schedule ahead?
+                // For this simple implementation: Just trigger if we haven't processed this index
+
+                // Play Sound
+                // Check if this time matches a group to play chord?
+                // Or just play individual notes. Tone PolySynth handles polyphony.
+                // We prevent double playing by incrementing index immediately
+
+                // If it's *too* old (skipped), maybe don't play? < 0.1s lag is fine.
+                if (trackTime - note.time < 0.2) {
+                    playChord([note.keyIndex], 0.5);
+                }
+
+                // Add to active for highlighting
+                if (note.id) newActiveIds.add(note.id);
+                hasUpdates = true;
+
+                // Schedule removal of highlight
+                setTimeout(() => {
+                    setActiveNoteIds(prev => {
+                        const next = new Set(prev);
+                        if (note.id) next.delete(note.id);
+                        return next;
+                    });
+                }, 400); // Highlight duration
+
+                nextNoteIndexRef.current++;
+            } else {
+                break; // Next note is in future
+            }
+        }
+
+        if (hasUpdates) {
+            setActiveNoteIds(newActiveIds);
+        }
+
+        // 3. Auto Scroll (Visual)
+        // Optionally sync scroll to time instead of generic speed
+        // For now keep manual speed as user requested "Scroll Speed" control usually implies manual override
+        if (containerRef.current && autoScroll) {
+            const deltaTime = (time - lastTimeRef.current) / 1000;
             accumulatedScrollRef.current += speedRef.current * deltaTime;
             if (accumulatedScrollRef.current >= 1) {
                 const px = Math.floor(accumulatedScrollRef.current);
@@ -123,20 +237,18 @@ export const TabNotation: React.FC<TabNotationProps> = ({ song, className }) => 
                 accumulatedScrollRef.current -= px;
             }
         }
+
+        lastTimeRef.current = time;
         animationFrameRef.current = requestAnimationFrame(animate);
-    }, [isPlaying, autoScroll]);
+    }, [isPlaying, autoScroll, sortedNotes, activeNoteIds]);
 
     useEffect(() => {
-        animationFrameRef.current = requestAnimationFrame(animate);
-        return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current); };
-    }, [animate]);
-
-    const handleReset = () => {
-        if (containerRef.current) containerRef.current.scrollTop = 0;
-        setIsPlaying(false);
-        lastTimeRef.current = 0;
-        accumulatedScrollRef.current = 0;
-    };
+        if (isPlaying) {
+            animationFrameRef.current = requestAnimationFrame(animate);
+        } else if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+        }
+    }, [isPlaying, animate]);
 
     return (
         <div className={cn("flex flex-col h-full", className)}>
@@ -160,7 +272,7 @@ export const TabNotation: React.FC<TabNotationProps> = ({ song, className }) => 
                             <NeonButton
                                 variant={isPlaying ? "orange" : "cyan"}
                                 size="sm"
-                                onClick={() => setIsPlaying(!isPlaying)}
+                                onClick={handleTogglePlay}
                                 className="h-10 px-6 skew-x-[-12deg]"
                             >
                                 <div className="skew-x-[12deg] flex items-center gap-2">
@@ -227,9 +339,12 @@ export const TabNotation: React.FC<TabNotationProps> = ({ song, className }) => 
                                         {showRest && <RestDisplay beats={restBeats} />}
                                         <div className="transition-transform duration-500">
                                             {item.notes.length > 1 ? (
-                                                <ChordDisplay notes={item.notes} isHighlighted={false} />
+                                                <ChordDisplay notes={item.notes} isHighlighted={false} activeNoteIds={activeNoteIds} />
                                             ) : (
-                                                <TabNote note={item.notes[0]} isHighlighted={false} />
+                                                <TabNote
+                                                    note={item.notes[0]}
+                                                    isHighlighted={item.notes[0].id ? activeNoteIds.has(item.notes[0].id) : false}
+                                                />
                                             )}
                                         </div>
                                     </div>

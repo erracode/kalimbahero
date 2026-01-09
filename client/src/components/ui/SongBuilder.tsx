@@ -9,6 +9,7 @@ import { AuroraBackground } from '@/components/ui/AuroraBackground';
 import { AutoTranscribeModal } from './AutoTranscribeModal';
 import { cn } from '@/lib/utils';
 import { Input } from './input';
+import { useUIStore } from '@/stores/uiStore';
 import {
   Select,
   SelectContent,
@@ -44,6 +45,12 @@ const ICONS = [
   { id: 'sword', emoji: '⚔️' },
   { id: 'bell', emoji: '🔔' },
   { id: 'zap', emoji: '⚡' },
+];
+
+const SONG_CATEGORIES = [
+  'Pop', 'Anime', 'Rock', 'OST', 'Classical', 'Game',
+  'Valentine', 'Christmas', 'Halloween', 'Meme', 'Disney',
+  'TV', 'K-pop', 'Movies', 'Nursery rhymes', 'Traditional', 'Worship'
 ];
 
 const COLORS = [
@@ -83,9 +90,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   const [isPublic, setIsPublic] = useState(false); // Default to private cloud save
   const [syncToCloud, setSyncToCloud] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState(initialSong?.youtubeUrl || '');
+  const [category, setCategory] = useState(initialSong?.category || '');
   const [jsonOutput, setJsonOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
+
+  const { openAuth } = useUIStore();
 
   // Track if initial load happened to avoid double-triggers
   const [isLoaded, setIsLoaded] = useState(false);
@@ -107,6 +117,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setIsPublic(initialSong.isPublic || false);
       setSyncToCloud(initialSong.isCloud || false);
       setYoutubeUrl(initialSong.youtubeUrl || '');
+      setCategory(initialSong.category || '');
       setError(null);
       setJsonOutput('');
       setIsLoaded(true);
@@ -124,6 +135,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setNotes([]);
       setDuration(30);
       setYoutubeUrl('');
+      setCategory('');
       setError(null);
       setJsonOutput('');
       setIsLoaded(true);
@@ -145,8 +157,9 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       notes,
       duration: editorMode === 'chart' ? Math.max(duration, ...notes.map(n => n.time + (n.duration || 0))) : duration,
       youtubeUrl,
+      category,
     };
-  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode]);
+  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, youtubeUrl, category]);
 
   // Auto-trigger onChange when state changes
   useEffect(() => {
@@ -254,6 +267,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       isPublic: isPublic,
       cloudId: initialSong?.cloudId,
       youtubeUrl,
+      category,
     };
 
     setError(null);
@@ -299,7 +313,9 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         setNotation(song.notation || '');
         setNotes(song.notes || []);
         setDuration(song.duration || 30);
+        setDuration(song.duration || 30);
         setYoutubeUrl(song.youtubeUrl || '');
+        setCategory(song.category || 'Pop');
         setError(null);
       } else {
         setError('Invalid JSON format');
@@ -488,6 +504,25 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                   </p>
                 </div>
 
+                {/* Category */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Category</label>
+                  <Select
+                    value={category || "none"}
+                    onValueChange={(val) => setCategory(val === "none" ? "" : val)}
+                  >
+                    <SelectTrigger className="w-full bg-white/5 border-white/10 text-white focus:border-cyan-500/50 rounded-none skew-x-[-12deg] h-10 px-4">
+                      <SelectValue placeholder="Select Category" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#111] border-white/10 text-white  max-h-[300px]">
+                      <SelectItem value="none" className="uppercase font-bold focus:bg-white/10 tracking-wider text-white/40">None</SelectItem>
+                      {SONG_CATEGORIES.map(cat => (
+                        <SelectItem key={cat} value={cat} className="uppercase font-bold focus:bg-white/10 tracking-wider">{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Difficulty */}
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Difficulty</label>
@@ -560,7 +595,8 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                         if (isAuthenticated) {
                           setSyncToCloud(!syncToCloud);
                         } else {
-                          // Prompt login
+                          // Trigger Global Auth
+                          openAuth();
                           setError('Please login to enable cloud sync');
                           setTimeout(() => setError(null), 3000);
                         }
@@ -594,6 +630,17 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                       ? 'Login to backup your tracks.'
                       : syncToCloud ? 'Your song will be backed up to the cloud when you save.' : 'Only saved locally in this browser.'}
                   </p>
+                  <div className="mt-4">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">YouTube Video URL (Optional)</label>
+                    <Input
+                      type="text"
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
+                      placeholder="https://youtube.com/watch?v=..."
+                      className="w-full bg-white/5 border-white/10 text-white placeholder-white/20 focus:border-cyan-500/50 rounded-none skew-x-[-12deg] text-xs font-bold uppercase tracking-wider h-10 px-4"
+                    />
+                  </div>
+
                 </div>
 
                 {/* JSON Import/Export */}

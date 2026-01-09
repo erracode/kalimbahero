@@ -65,6 +65,7 @@ export const songs = pgTable("songs", {
     isPublic: boolean("isPublic").notNull().default(false),
     coverUrl: text("coverUrl"),
     youtubeUrl: text("youtubeUrl"),
+    category: text("category"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull()
 });

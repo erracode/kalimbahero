@@ -848,9 +848,9 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-[#111] border-white/20">
-                <SelectItem value="4/4" className="text-white hover:bg-white/10 cursor-pointer">4/4</SelectItem>
-                <SelectItem value="3/4" className="text-white hover:bg-white/10 cursor-pointer">3/4</SelectItem>
-                <SelectItem value="2/4" className="text-white hover:bg-white/10 cursor-pointer">2/4</SelectItem>
+                <SelectItem value="4/4" className="focus:bg-white/10 text-white hover:bg-white/10 cursor-pointer">4/4</SelectItem>
+                <SelectItem value="3/4" className="focus:bg-white/10 text-white hover:bg-white/10 cursor-pointer">3/4</SelectItem>
+                <SelectItem value="2/4" className="focus:bg-white/10 text-white hover:bg-white/10 cursor-pointer">2/4</SelectItem>
               </SelectContent>
             </Select>
           </div>

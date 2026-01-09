@@ -13,7 +13,11 @@ import { z } from "zod";
 import { zodValidator } from "@tanstack/zod-adapter";
 
 const searchSchema = z.object({
+  q: z.string().optional(),
+  difficulty: z.enum(["easy", "medium", "hard", "expert"]).optional(),
+  category: z.string().optional(),
   view: z.enum(["all", "bookmarks", "my-tabs"]).optional().default("all"),
+  bookmarks: z.boolean().optional(),
 });
 
 export const Route = createFileRoute("/library")({
@@ -32,10 +36,10 @@ export const Route = createFileRoute("/library")({
 
 function SongLibraryRoute() {
   const navigate = useNavigate();
-  const { view } = Route.useSearch();
+  const search = Route.useSearch();
   const { setEditingSong } = useBuilderStore();
 
-  const { songs: storedSongs, deleteSong } = useSongStore();
+  const { deleteSong } = useSongStore();
 
   // Persist game mode
   const [gameMode, setGameMode] = useLocalStorage<"3d" | "tab">(STORAGE_KEYS.GAME_MODE, "3d");
@@ -50,21 +54,18 @@ function SongLibraryRoute() {
     }
   };
 
-  const handleDeleteSong = async (songId: string) => {
-    // 1. Find the song to check if it's on cloud
-    const songToDelete = storedSongs.find(s => s.id === songId);
-
-    // 2. Delete from cloud if applicable
-    if (songToDelete?.cloudId && isAuthenticated) {
+  const handleDeleteSong = async (song: Song) => {
+    // 1. Delete from cloud if applicable
+    if (song.cloudId && isAuthenticated) {
       try {
-        await deleteCloudSong(songToDelete.cloudId);
+        await deleteCloudSong(song.cloudId);
       } catch (err) {
         console.error("Failed to delete from cloud", err);
       }
     }
 
-    // 3. Delete from store
-    deleteSong(songId);
+    // 2. Delete from local store (if it exists there)
+    deleteSong(song.id);
   };
 
   const handleEditSong = (song: Song) => {
@@ -80,6 +81,7 @@ function SongLibraryRoute() {
   return (
     <div className="relative min-h-screen bg-[#050510]">
       <SongLibrary
+        key={search.view}
         onSelectSong={handleSelectSong}
         onEditSong={handleEditSong}
         onDeleteSong={handleDeleteSong}
@@ -87,7 +89,7 @@ function SongLibraryRoute() {
         onBack={() => navigate({ to: "/" })}
         gameMode={gameMode}
         onGameModeChange={setGameMode}
-        initialView={view}
+        searchParams={search}
       />
     </div>
   );

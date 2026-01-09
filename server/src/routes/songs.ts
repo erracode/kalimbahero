@@ -18,15 +18,31 @@ app.get('/', async (c) => {
     const limit = parseInt(c.req.query('limit') || '24');
     const offset = (page - 1) * limit;
 
+    const difficulty = c.req.query('difficulty');
+    const category = c.req.query('category');
+    const q = c.req.query('q');
+
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
 
-    let whereClause = eq(songs.isPublic, true);
+    let conditions: any[] = [eq(songs.isPublic, true)];
+
     if (authorId) {
-        whereClause = and(whereClause, eq(songs.authorId, authorId)) as any;
+        conditions.push(eq(songs.authorId, authorId));
+    }
+    if (difficulty) {
+        conditions.push(eq(songs.difficulty, difficulty.toUpperCase()));
+    }
+    if (category) {
+        conditions.push(eq(songs.category, category));
+    }
+    if (q) {
+        conditions.push(sql`(LOWER(${songs.title}) LIKE ${'%' + q.toLowerCase() + '%'} OR LOWER(${songs.artist}) LIKE ${'%' + q.toLowerCase() + '%'})`);
     }
     if (favoritesOnly && session) {
-        whereClause = and(whereClause, sql`EXISTS(SELECT 1 FROM ${favorites} WHERE ${favorites.songId} = ${songs.id} AND ${favorites.userId} = ${session.user.id})`) as any;
+        conditions.push(sql`EXISTS(SELECT 1 FROM ${favorites} WHERE ${favorites.songId} = ${songs.id} AND ${favorites.userId} = ${session.user.id})`);
     }
+
+    let whereClause = and(...conditions);
 
     // Get total count for pagination
     const [countResult] = await db.select({ count: sql<number>`count(*)` })
@@ -43,8 +59,10 @@ app.get('/', async (c) => {
         difficulty: songs.difficulty,
         plays: songs.plays,
         likes: songs.likes,
-        songData: songs.songData,
+        isPublic: songs.isPublic,
         coverUrl: songs.coverUrl,
+        category: songs.category,
+        youtubeUrl: songs.youtubeUrl,
         createdAt: songs.createdAt,
         author: {
             id: users.id,
@@ -55,7 +73,9 @@ app.get('/', async (c) => {
         isLiked: session ? sql<boolean>`EXISTS(SELECT 1 FROM ${likes} WHERE ${likes.songId} = ${songs.id} AND ${likes.userId} = ${session.user.id})` : sql<boolean>`false`,
         isFavorited: session ? sql<boolean>`EXISTS(SELECT 1 FROM ${favorites} WHERE ${favorites.songId} = ${songs.id} AND ${favorites.userId} = ${session.user.id})` : sql<boolean>`false`,
         averageRating: sql<number>`(SELECT AVG(${ratings.score})::numeric(10,1) FROM ${ratings} WHERE ${ratings.songId} = ${songs.id})`,
+        voteCount: sql<number>`(SELECT COUNT(*)::int FROM ${ratings} WHERE ${ratings.songId} = ${songs.id})`,
         userRating: session ? sql<number>`(SELECT ${ratings.score} FROM ${ratings} WHERE ${ratings.songId} = ${songs.id} AND ${ratings.userId} = ${session.user.id})` : sql<number>`null`,
+        songData: songs.songData,
     })
         .from(songs)
         .leftJoin(users, eq(songs.authorId, users.id))
@@ -83,6 +103,50 @@ app.get('/', async (c) => {
     });
 });
 
+// GET /api/songs/me - Get current user's songs (including private ones)
+app.get('/me', async (c) => {
+    try {
+        const session = await auth.api.getSession({ headers: c.req.raw.headers });
+        if (!session) {
+            return c.json({ success: false, error: "Unauthorized" }, 401);
+        }
+
+        const results = await db.select({
+            id: songs.id,
+            title: songs.title,
+            artist: songs.artist,
+            difficulty: songs.difficulty,
+            plays: songs.plays,
+            likes: songs.likes,
+            isPublic: songs.isPublic,
+            coverUrl: songs.coverUrl,
+            category: songs.category,
+            youtubeUrl: songs.youtubeUrl,
+            createdAt: songs.createdAt,
+            author: {
+                id: users.id,
+                name: users.name,
+                image: users.image
+            },
+            isLiked: sql<boolean>`EXISTS(SELECT 1 FROM ${likes} WHERE ${likes.songId} = ${songs.id} AND ${likes.userId} = ${session.user.id})`,
+            isFavorited: sql<boolean>`EXISTS(SELECT 1 FROM ${favorites} WHERE ${favorites.songId} = ${songs.id} AND ${favorites.userId} = ${session.user.id})`,
+            averageRating: sql<number>`(SELECT AVG(${ratings.score})::numeric(10,1) FROM ${ratings} WHERE ${ratings.songId} = ${songs.id})`,
+            voteCount: sql<number>`(SELECT COUNT(*)::int FROM ${ratings} WHERE ${ratings.songId} = ${songs.id})`,
+            userRating: sql<number>`(SELECT ${ratings.score} FROM ${ratings} WHERE ${ratings.songId} = ${songs.id} AND ${ratings.userId} = ${session.user.id})`,
+            songData: songs.songData,
+        })
+            .from(songs)
+            .leftJoin(users, eq(songs.authorId, users.id))
+            .where(eq(songs.authorId, session.user.id))
+            .orderBy(desc(songs.updatedAt));
+
+        return c.json({ success: true, data: results });
+    } catch (err: any) {
+        console.error("Error in /api/songs/me:", err);
+        return c.json({ success: false, error: err.message || "Internal Server Error" }, 500);
+    }
+});
+
 // GET /api/songs/:id - Get single song
 app.get('/:id', async (c) => {
     const id = c.req.param('id');
@@ -95,41 +159,6 @@ app.get('/:id', async (c) => {
         return c.json({ success: false, error: "Song not found" }, 404);
     }
     return c.json({ success: true, data: result[0] });
-});
-
-// GET /api/songs/my/all - Get current user's songs (Protected)
-app.get('/my/all', async (c) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (!session) {
-        return c.json({ success: false, error: "Unauthorized" }, 401);
-    }
-
-    const page = parseInt(c.req.query('page') || '0'); // 0 means return all
-    const limit = parseInt(c.req.query('limit') || '24');
-    const offset = (page > 0 ? (page - 1) * limit : 0);
-
-    let query = db.select()
-        .from(songs)
-        .where(eq(songs.authorId, session.user.id))
-        .orderBy(desc(songs.updatedAt));
-
-    if (page > 0) {
-        const [countResult] = await db.select({ count: sql<number>`count(*)` })
-            .from(songs)
-            .where(eq(songs.authorId, session.user.id));
-
-        const totalCount = Number(countResult?.count || 0);
-        const results = await query.limit(limit).offset(offset);
-
-        return c.json({
-            success: true,
-            data: results,
-            pagination: { page, limit, totalCount, totalPages: Math.ceil(totalCount / limit) }
-        });
-    }
-
-    const userSongs = await query;
-    return c.json({ success: true, data: userSongs });
 });
 
 // POST /api/songs - Publish/Sync Song (Protected)
@@ -168,13 +197,14 @@ app.post('/', async (c) => {
     const [newSong] = await db.insert(songs).values({
         authorId: session.user.id,
         title: body.title,
-        artist: body.artist || "Unknown Artist",
+        artist: body.artist || body.songData.artist || "Unknown Artist",
         slug,
         songData: body.songData,
-        difficulty: body.difficulty || 'MEDIUM',
-        isPublic: body.isPublic || false,
-        coverUrl: body.coverUrl,
-        youtubeUrl: body.youtubeUrl,
+        difficulty: (body.difficulty || body.songData.difficulty || 'medium').toLowerCase(),
+        isPublic: body.isPublic || body.songData.isPublic || false,
+        coverUrl: body.coverUrl || body.songData.coverUrl,
+        youtubeUrl: body.youtubeUrl || body.songData.youtubeUrl,
+        category: body.category || body.songData.category,
     }).returning();
 
     return c.json({ success: true, data: newSong });
@@ -196,12 +226,13 @@ app.put('/:id', async (c) => {
     const [updated] = await db.update(songs)
         .set({
             title: body.title ?? existing.title,
-            artist: body.artist ?? existing.artist,
+            artist: body.artist ?? body.songData?.artist ?? existing.artist,
             songData: body.songData ?? existing.songData,
-            difficulty: body.difficulty ?? existing.difficulty,
-            isPublic: body.isPublic !== undefined ? body.isPublic : existing.isPublic,
-            coverUrl: body.coverUrl ?? existing.coverUrl,
-            youtubeUrl: body.youtubeUrl ?? existing.youtubeUrl,
+            difficulty: (body.difficulty ?? body.songData?.difficulty ?? existing.difficulty)?.toLowerCase(),
+            isPublic: body.isPublic !== undefined ? body.isPublic : (body.songData?.isPublic ?? existing.isPublic),
+            coverUrl: body.coverUrl ?? body.songData?.coverUrl ?? existing.coverUrl,
+            youtubeUrl: body.youtubeUrl ?? body.songData?.youtubeUrl ?? existing.youtubeUrl,
+            category: body.category ?? body.songData?.category ?? existing.category,
             updatedAt: new Date(),
         })
         .where(eq(songs.id, id))

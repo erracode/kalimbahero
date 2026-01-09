@@ -63,7 +63,9 @@ export function useAuthSync() {
                     artist: song.artist,
                     songData: song,
                     difficulty: song.difficulty,
-                    isPublic: song.isPublic || false
+                    isPublic: song.isPublic || false,
+                    youtubeUrl: song.youtubeUrl,
+                    category: song.category,
                 }),
                 credentials: 'include',
             });

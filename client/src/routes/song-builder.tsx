@@ -19,63 +19,70 @@ function SongBuilderRoute() {
 
     const { isAuthenticated } = useAuth();
     const { syncSong, deleteCloudSong } = useAuthSync();
-    const { addSong, updateSong, markAsSynced, markAsUnsynced, songs } = useSongStore();
+    const { addSong, updateSong, deleteSong, markAsSynced, markAsUnsynced, songs } = useSongStore();
 
     const handleSave = useCallback(async (song: Song, options?: { cloud?: boolean; publish?: boolean }) => {
-        // 1. Prepare song with intent flags for local storage
+        // 1. Prepare base song
         const localSong = {
             ...song,
             isCloud: options?.cloud || false,
             isPublic: options?.publish || false
         };
 
-        // 2. Update store (local library)
-        const isNew = !songs.find(s => s.id === localSong.id);
-        if (isNew) {
-            addSong(localSong);
-        } else {
-            updateSong(localSong.id, localSong);
-        }
-
         let finalSong = localSong;
 
-        // 3. Optional: Cloud Sync or Unsync
-        if (isAuthenticated) {
-            if (options?.cloud) {
-                try {
-                    const result = await syncSong(localSong);
-                    if (result.success && result.data?.id) {
-                        // Update the local song with server metadata
-                        const cloudId = result.data.id;
-                        const isPublic = result.data.isPublic;
-                        markAsSynced(localSong.id, cloudId, isPublic);
+        // 2. Local-only or Cloud Sync
+        if (isAuthenticated && options?.cloud) {
+            try {
+                const result = await syncSong(localSong);
+                if (result.success && result.data?.id) {
+                    // Successfully synced to cloud!
+                    // REMOVE from local storage as requested
+                    deleteSong(localSong.id);
 
-                        // Incorporate cloud metadata into the song we'll store in builderState
-                        finalSong = { ...localSong, cloudId, isCloud: true, isPublic };
-                    }
-                } catch (err) {
-                    console.error("Cloud sync failed", err);
+                    const cloudId = result.data.id;
+                    const isPublic = result.data.isPublic;
+                    finalSong = { ...localSong, cloudId, isCloud: true, isPublic };
+                } else {
+                    // Fallback to local if sync failed
+                    updateOrAddLocal(localSong);
                 }
-            } else if (localSong.cloudId) {
+            } catch (err) {
+                console.error("Cloud sync failed, saving locally", err);
+                updateOrAddLocal(localSong);
+            }
+        } else {
+            // Unsync or keep local
+            if (isAuthenticated && !options?.cloud && localSong.cloudId) {
                 try {
                     await deleteCloudSong(localSong.cloudId);
-                    markAsUnsynced(localSong.id);
-                    finalSong = { ...localSong, cloudId: undefined, isCloud: false, isPublic: false };
                 } catch (err) {
                     console.error("Cloud removal failed", err);
                 }
             }
+            const updated = { ...localSong, isCloud: false, cloudId: undefined };
+            updateOrAddLocal(updated);
+            finalSong = updated;
         }
 
-        // 3. Update builder store current state with final version (including cloudId if synced)
+        function updateOrAddLocal(s: Song) {
+            const isNew = !songs.find(item => item.id === s.id);
+            if (isNew) {
+                addSong(s);
+            } else {
+                updateSong(s.id, s);
+            }
+        }
+
+        // 3. Update builder store current state with final version
         setEditingSong(finalSong);
 
         // 4. Navigate back to library
-        navigate({ to: '/library' });
-    }, [addSong, updateSong, markAsSynced, markAsUnsynced, songs, setEditingSong, navigate, isAuthenticated, syncSong, deleteCloudSong]);
+        navigate({ to: '/library', search: { view: 'my-tabs' } });
+    }, [addSong, updateSong, deleteSong, markAsSynced, markAsUnsynced, songs, setEditingSong, navigate, isAuthenticated, syncSong, deleteCloudSong]);
 
     const handleBack = useCallback(() => {
-        navigate({ to: '/library' });
+        navigate({ to: '/library', search: { view: 'my-tabs' } });
     }, [navigate]);
 
     const handleTestPlay = useCallback((song: Song) => {

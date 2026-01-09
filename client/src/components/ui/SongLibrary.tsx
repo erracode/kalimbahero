@@ -3,26 +3,49 @@
 // ============================================
 
 import { useState, useMemo, useEffect } from 'react';
+import { useDebounce } from "@uidotdev/usehooks";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Play, Trash2, Edit2, Star, Heart, Music, Zap, ArrowLeft, Snowflake, Sword, Bell, Box, FileText } from 'lucide-react';
+import { Search, Plus, Play, Trash2, Edit2, Star, Heart, Music, Zap, ArrowLeft, Snowflake, Sword, Bell, Box, FileText, Cloud, HardDrive, Loader2, AlertTriangle, Youtube } from 'lucide-react';
 import { NeonButton } from './NeonButton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import type { Song } from '@/types/game';
 import { useSongStore } from '@/stores/songStore';
-import { useAuthSync } from '@/hooks/useAuthSync';
+import { useAuth } from '@/hooks/useAuth';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useNavigate } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { AuroraBackground } from './AuroraBackground';
+import { useUIStore } from '@/stores/uiStore';
 
 type GameMode = '3d' | 'tab';
 
 interface SongLibraryProps {
   onSelectSong: (song: Song) => void;
   onEditSong?: (song: Song) => void;
-  onDeleteSong?: (songId: string) => void;
+  onDeleteSong?: (song: Song) => Promise<void>;
   onCreateNew?: () => void;
   onBack: () => void;
   gameMode?: GameMode;
   onGameModeChange?: (mode: GameMode) => void;
-  initialView?: 'all' | 'bookmarks' | 'my-tabs';
+  searchParams: {
+    q?: string;
+    difficulty?: 'easy' | 'medium' | 'hard' | 'expert';
+    category?: string;
+    view?: 'all' | 'bookmarks' | 'my-tabs';
+    bookmarks?: boolean;
+  };
 }
 
 // Icon map for song details
@@ -43,6 +66,14 @@ const difficultyColors: Record<string, string> = {
   expert: '#FF6B6B', // Red
 };
 
+// Helper to extract YouTube ID
+const getYoutubeId = (url: string) => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
+
 export const SongLibrary: React.FC<SongLibraryProps> = ({
   onSelectSong,
   onEditSong,
@@ -51,28 +82,117 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   onBack,
   gameMode = '3d',
   onGameModeChange,
-  initialView = 'all',
+  searchParams,
 }) => {
+  const navigate = useNavigate();
   const { songs } = useSongStore();
-  const [filter, setFilter] = useState<string>('all');
-  // Set initial tab based on initialView prop
-  // bookmarks and all -> Global tab, my-tabs -> My Tabs tab
-  const [tab, setTab] = useState<'my' | 'community'>(initialView === 'my-tabs' ? 'my' : 'community');
-  const [subFilter, setSubFilter] = useState<'all' | 'bookmarks' | 'my-tabs'>(initialView);
+  const { openAuth } = useUIStore();
+
+  // URL Params Derivation
+  const filter = searchParams.difficulty || 'all';
+  const tab = searchParams.view === 'my-tabs' ? 'my' : 'community';
+
+  // "Bookmarks" is now a toggle regardless of tab (though mostly for community)
+  // But for legacy compatibility with 'view=bookmarks', we treat it as active
+  const showFavorites = searchParams.bookmarks || searchParams.view === 'bookmarks';
+  const searchQuery = searchParams.q || '';
+  const activeCategory = searchParams.category || 'all';
+
   const [communitySongs, setCommunitySongs] = useState<Song[]>([]);
+  const [userSongs, setUserSongs] = useState<Song[]>([]);
   const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+
+  // Guest Bookmarks State
+  const [guestBookmarks, setGuestBookmarks] = useLocalStorage<string[]>('kalimba_guest_bookmarks', []);
 
   // Pagination & Social Filters
   const [isLoading, setIsLoading] = useState(false);
-  const [page, setPage] = useState(1); // Added page state
+  const [isBookmarking, setIsBookmarking] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [page, setPage] = useState(1);
   const sort = 'new';
-  const showFavorites = subFilter === 'bookmarks'; // Derived from subFilter
 
-  const { isAuthenticated } = useAuthSync();
+  const { isAuthenticated, user } = useAuth();
+
+  // Local state for debounced search
+  const [searchTerm, setSearchTerm] = useState(searchQuery);
+  const debouncedSearchTerm = useDebounce(searchTerm, 400);
+
+  // Sync local searchTerm with URL if it changes externally (e.g. back button)
+  useEffect(() => {
+    setSearchTerm(searchQuery);
+  }, [searchQuery]);
+
+  // Update URL search params when debounced term changes
+  useEffect(() => {
+    if (debouncedSearchTerm !== searchQuery) {
+      updateSearch({ q: debouncedSearchTerm });
+    }
+  }, [debouncedSearchTerm]);
+
+  const updateSearch = (updates: Partial<typeof searchParams>) => {
+    navigate({
+      to: '/library',
+      search: (prev) => {
+        const next = { ...prev, ...updates };
+        // Clean up empty/all filters
+        if ((next.difficulty as any) === 'all') delete next.difficulty;
+        if ((next.category as any) === 'all') delete next.category;
+        if (next.q === '') delete next.q;
+        return next;
+      },
+      replace: true
+    });
+  };
 
   const fetchCommunity = async (targetPage = page) => {
+    // Logic Split: Auth vs Guest for Bookmarks
+    if (showFavorites && !isAuthenticated) {
+      // GUEST BOOKMARKS FETCH
+      // API doesn't support ids filtering, so we fetch individual songs
+      if (guestBookmarks.length === 0) {
+        setCommunitySongs([]);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const promises = guestBookmarks.map(id =>
+          fetch(`http://localhost:3000/api/songs/${id}`).then(res => res.ok ? res.json() : null)
+        );
+
+        const results = await Promise.all(promises);
+        const validSongs = results
+          .filter(r => r && r.success && r.data)
+          .map(r => ({
+            ...r.data.songData,
+            id: r.data.id,
+            title: r.data.title || r.data.songData?.title,
+            artist: r.data.artist || r.data.songData?.artist,
+            difficulty: r.data.difficulty || r.data.songData?.difficulty || 'medium',
+            author: r.data.author,
+            likes: r.data.likes,
+            plays: r.data.plays,
+            isLiked: false,
+            isFavorited: false, // Guest "favorite" is local
+            averageRating: r.data.averageRating,
+            userRating: r.data.userRating, // Likely null for guest
+            voteCount: r.data.voteCount
+          }));
+
+        setCommunitySongs(validSongs);
+        // Pagination is artificial for guest bookmarks (all loaded)
+        setPage(1);
+      } catch (err) {
+        console.error("Failed to fetch guest bookmarks", err);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // AUTH / NORMAL DISCOVERY FETCH
     setIsLoading(true);
     try {
       const params = new URLSearchParams({
@@ -80,24 +200,35 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         sort,
         limit: '12',
         ...(filter !== 'all' && { difficulty: filter }),
-        ...(showFavorites && { favoritesOnly: 'true' })
+        // Only pass favoritesOnly if authenticated
+        ...(showFavorites && isAuthenticated && { favoritesOnly: 'true' }),
+        ...(searchQuery && { q: searchQuery }),
+        ...(activeCategory !== 'all' && { category: activeCategory }),
       });
 
       const res = await fetch(`http://localhost:3000/api/songs?${params}`, {
-        headers: isAuthenticated ? { 'credentials': 'include' } : {}
-      } as any);
+        credentials: isAuthenticated ? 'include' : 'omit'
+      });
 
       const json = await res.json();
       if (json.success) {
         setCommunitySongs(json.data.map((s: any) => ({
           ...s.songData,
           id: s.id,
-          artist: s.artist || s.songData.artist,
+          title: s.title || s.songData?.title,
+          artist: s.artist || s.songData?.artist,
+          difficulty: s.difficulty || s.songData?.difficulty || 'medium',
           author: s.author,
           likes: s.likes,
           plays: s.plays,
-          isLiked: s.isLiked,
-          isFavorited: s.isFavorited
+          isLiked: s.isLiked, // From Auth
+          isFavorited: s.isFavorited, // From Auth
+          averageRating: s.averageRating,
+          userRating: s.userRating,
+          voteCount: s.voteCount,
+          isCloud: true,
+          cloudId: s.id,
+          isPublic: s.isPublic
         })));
         setPage(json.pagination.page);
       }
@@ -108,18 +239,69 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     }
   };
 
-  const handleLike = async (songId: string) => {
-    if (!isAuthenticated) return;
+  const fetchUserSongs = async () => {
+    if (!isAuthenticated || !user) return;
+    setIsLoading(true);
     try {
-      const res = await fetch(`http://localhost:3000/api/songs/${songId}/like`, { method: 'POST', credentials: 'include' });
+      const res = await fetch(`http://localhost:3000/api/songs/me`, {
+        credentials: 'include'
+      });
       const json = await res.json();
       if (json.success) {
-        setCommunitySongs(prev => prev.map(s =>
-          s.id === songId ? { ...s, isLiked: json.isLiked, likes: (s.likes || 0) + (json.isLiked ? 1 : -1) } : s
-        ));
+        setUserSongs(json.data.map((s: any) => ({
+          ...s.songData,
+          id: s.id,
+          title: s.title || s.songData?.title,
+          artist: s.artist || s.songData?.artist,
+          difficulty: s.difficulty || s.songData?.difficulty || 'medium',
+          author: s.author,
+          likes: s.likes,
+          plays: s.plays,
+          isLiked: s.isLiked,
+          isFavorited: s.isFavorited,
+          averageRating: s.averageRating,
+          userRating: s.userRating,
+          voteCount: s.voteCount,
+          isCloud: true,
+          cloudId: s.id,
+          isPublic: s.isPublic
+        })));
       }
     } catch (err) {
-      console.error("Failed to like song", err);
+      console.error("Failed to fetch user songs", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const isSongBookmarked = (song: Song) => {
+    if (isAuthenticated) return song.isFavorited || song.isLiked; // Simplified for now
+    return guestBookmarks.includes(song.id);
+  };
+
+  const handleToggleBookmark = async (song: Song) => {
+    if (isAuthenticated) {
+      // Auth Flow
+      setIsBookmarking(song.id);
+      try {
+        const res = await fetch(`http://localhost:3000/api/songs/${song.id}/like`, { method: 'POST', credentials: 'include' });
+        const json = await res.json();
+        if (json.success) {
+          setCommunitySongs(prev => prev.map(s =>
+            s.id === song.id ? { ...s, isLiked: json.isLiked, likes: (s.likes || 0) + (json.isLiked ? 1 : -1) } : s
+          ));
+        }
+      } catch (err) {
+        console.error("Failed to like song", err);
+      } finally {
+        setIsBookmarking(null);
+      }
+    } else {
+      // Guest Flow
+      setGuestBookmarks(prev => {
+        if (prev.includes(song.id)) return prev.filter(id => id !== song.id);
+        return [...prev, song.id];
+      });
     }
   };
 
@@ -129,41 +311,77 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     } catch (err) { /* ignore */ }
   };
 
-  const handleTabChange = (newTab: 'my' | 'community') => {
-    setTab(newTab);
-    setSelectedSongId(null);
-    if (newTab === 'community' && subFilter === 'my-tabs') {
-      setSubFilter('all');
+  const handleRate = async (songId: string, score: number) => {
+    if (!isAuthenticated) {
+      openAuth();
+      return;
     }
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/songs/${songId}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ score }),
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCommunitySongs(prev => prev.map(s =>
+          s.id === songId ? { ...s, averageRating: json.averageRating, userRating: json.userRating } : s
+        ));
+      }
+    } catch (err) {
+      console.error("Failed to rate song", err);
+    }
+  };
+
+  const handleTabChange = (newView: 'my-tabs' | 'all') => {
+    updateSearch({ view: newView, bookmarks: undefined }); // Reset bookmarks when switching main view logic
+    setSelectedSongId(null);
   };
 
   useEffect(() => {
     if (tab === 'community') {
       fetchCommunity();
+    } else if (tab === 'my') {
+      fetchUserSongs();
     }
-  }, [filter, page, showFavorites, tab, sort]);
+  }, [filter, page, showFavorites, tab, sort, searchQuery, activeCategory, isAuthenticated, guestBookmarks, user?.id]);
 
-  const activeSongs = tab === 'my' ? songs : communitySongs;
+  const activeSongs = useMemo(() => {
+    if (tab === 'my') {
+      // Filter out local songs that are marked as cloud (to support migration)
+      // and merge with fetched user songs from cloud.
+      const localOnly = songs.filter(s => !s.isCloud);
+
+      // Merge: avoid duplicates just in case (by title/artist if ids differ for some reason)
+      // But usually id will be the same if we handle sync correctly.
+      return [...localOnly, ...userSongs];
+    }
+    return communitySongs;
+  }, [tab, songs, userSongs, communitySongs]);
 
   const filteredSongs = useMemo(() => {
     let result = activeSongs;
 
-    // Sub-filters for 'My' tab
     if (tab === 'my') {
-      if (subFilter === 'bookmarks') {
-        result = result.filter((s: Song) => s.isFavorited || s.isLiked);
-      } else if (subFilter === 'my-tabs') {
-        result = result.filter((s: Song) => !s.cloudId);
+      // My Local Songs - Ignore 'showFavorites' here as bookmarks are managed via Community/Cloud
+      // result = result.filter((s: Song) => s.isFavorited || s.isLiked);
+    } else {
+      // Community Songs
+      if (showFavorites && !isAuthenticated) {
+        // Guest Bookmarks Client Side Filter
+        result = result.filter(s => guestBookmarks.includes(s.id));
       }
     }
 
-    // Difficulty Filter
+    // Difficulty Filter (Client Side for 'My', Server Side already done for 'Community' usually, but good to be safe/consistent)
     if (filter !== 'all') {
       result = result.filter((s: Song) => s.difficulty === filter);
     }
 
-    // Search Query
-    if (searchQuery && searchQuery.trim()) {
+    // Search Query (Client Side for 'My')
+    if (tab === 'my' && searchQuery && searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((s: Song) =>
         s.title.toLowerCase().includes(q) ||
@@ -171,8 +389,14 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
       );
     }
 
+    // Category Filter (Client Side fallback)
+    if (activeCategory !== 'all') {
+      // Assuming song has category field, or fallback to generic
+      // result = result.filter(s => s.category === activeCategory);
+    }
+
     return result;
-  }, [filter, activeSongs, searchQuery, subFilter, tab]);
+  }, [filter, activeSongs, searchQuery, showFavorites, tab, guestBookmarks, isAuthenticated, activeCategory]);
 
   const selectedSong = useMemo(() => {
     return activeSongs.find(s => s.id === selectedSongId) || null;
@@ -292,7 +516,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             {/* Library Source Switch */}
             <div className="flex bg-black/40 p-1 rounded-none skew-x-[-12deg] border border-white/5">
               <button
-                onClick={() => handleTabChange('my')}
+                onClick={() => handleTabChange('my-tabs')}
                 className={cn(
                   "px-10 py-3 rounded-none text-xs font-black italic uppercase tracking-widest transition-all cursor-pointer",
                   tab === 'my' ? "bg-white/10 text-white shadow" : "text-white/30 hover:text-white"
@@ -301,7 +525,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                 <span className="skew-x-[12deg] block">My Tabs</span>
               </button>
               <button
-                onClick={() => handleTabChange('community')}
+                onClick={() => handleTabChange('all')}
                 className={cn(
                   "px-10 py-3 rounded-none text-xs font-black italic uppercase tracking-widest transition-all cursor-pointer",
                   tab === 'community' ? "bg-white/10 text-white shadow" : "text-white/30 hover:text-white"
@@ -311,25 +535,23 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               </button>
             </div>
 
-            {/* Sub-filters */}
-            <div className="flex items-center gap-2 ml-6">
-              {(tab === 'my'
-                ? (['all', 'my-tabs', 'bookmarks'] as const)
-                : (['all', 'bookmarks'] as const)
-              ).map((sf) => (
-                <button
-                  key={sf}
-                  onClick={() => setSubFilter(sf)}
-                  className={cn(
-                    "px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer border",
-                    subFilter === sf
-                      ? "bg-cyan-500/20 border-cyan-500 text-cyan-400"
-                      : "bg-transparent border-white/10 text-white/40 hover:text-white hover:border-white/20"
-                  )}
-                >
-                  {sf === 'all' ? 'All' : sf === 'my-tabs' ? 'Created' : 'Saved'}
-                </button>
-              ))}
+            {/* Bookmarks Toggle Hooked to URL */}
+            <div className="ml-6 flex items-center">
+              <button
+                onClick={() => updateSearch({
+                  bookmarks: !showFavorites,
+                  view: !showFavorites ? 'all' : undefined
+                })}
+                className={cn(
+                  "group flex items-center gap-2 px-4 py-2 border rounded-none skew-x-[-12deg] transition-all cursor-pointer",
+                  showFavorites ? "bg-yellow-500/20 border-yellow-500 text-yellow-500" : "bg-transparent border-white/10 text-white/40 hover:text-white"
+                )}
+              >
+                <Star className={cn("w-4 h-4 skew-x-[12deg]", showFavorites && "fill-yellow-500")} />
+                <span className="skew-x-[12deg] text-[10px] font-black italic uppercase tracking-widest">
+                  {showFavorites ? "Bookmarks" : "Bookmarks"}
+                </span>
+              </button>
             </div>
           </div>
         </div>
@@ -343,8 +565,8 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               </div>
               <input
                 type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="SEARCH FOR A TRACK..."
                 className="w-full bg-black/40 border border-white/10 py-2.5 pl-12 pr-4 text-xs font-black italic tracking-widest text-white placeholder:text-white/20 focus:outline-none focus:border-cyan-500/50 transition-colors uppercase"
               />
@@ -353,12 +575,32 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
 
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 text-[10px] font-black italic uppercase tracking-[0.2em] text-white/30 mr-4">
+              <span>Category:</span>
+            </div>
+            <Select value={activeCategory} onValueChange={(val) => updateSearch({ category: val === 'all' ? undefined : val })}>
+              <SelectTrigger className="w-[180px] bg-black/40 border-white/10 text-white text-xs font-bold uppercase tracking-wider rounded-none skew-x-[-12deg] focus:ring-cyan-500/50">
+                <SelectValue placeholder="CATEGORY" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#111] border-white/10 text-white ">
+                <SelectItem value="all">ALL CATEGORIES</SelectItem>
+                <SelectItem value="pop">POP</SelectItem>
+                <SelectItem value="anime">ANIME</SelectItem>
+                <SelectItem value="rock">ROCK</SelectItem>
+                <SelectItem value="soundtrack">OST</SelectItem>
+                <SelectItem value="classical">CLASSICAL</SelectItem>
+                <SelectItem value="game">GAME</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2 ml-8">
+            <div className="flex items-center gap-2 text-[10px] font-black italic uppercase tracking-[0.2em] text-white/30 mr-4">
               <span>Filter:</span>
             </div>
             {['all', 'easy', 'medium', 'hard', 'expert'].map(diff => (
               <button
                 key={diff}
-                onClick={() => setFilter(diff)}
+                onClick={() => updateSearch({ difficulty: diff === 'all' ? undefined : diff as any })}
                 className={cn(
                   "relative group px-6 py-2 rounded-none skew-x-[-12deg] border transition-all duration-300 overflow-hidden cursor-pointer",
                   // Base Styles & Borders
@@ -416,7 +658,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
           {/* Scroll Area */}
           <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/20">
             <div className="flex flex-col">
-              {isLoading && tab === 'community' ? (
+              {isLoading ? (
                 <div className="grid grid-cols-1 gap-1">
                   {[...Array(10)].map((_, i) => (
                     <div key={i} className="flex items-center px-10 py-4 bg-white/[0.03] border-b border-white/[0.03] animate-pulse">
@@ -440,11 +682,33 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                       "group flex items-center px-10 py-4 cursor-pointer border-b border-white/[0.03] transition-colors duration-150",
                       isSelected
                         ? "bg-white text-black z-10 shadow-[0_4px_20px_rgba(0,0,0,0.5)] border-transparent"
-                        : "hover:bg-white/5 text-white/60 hover:text-white"
+                        : "hover:bg-white/5 text-white/60 hover:text-white",
+                      // Highlight if bookmarked and not selected?
+                      !isSelected && isSongBookmarked(song) && "bg-cyan-500/5 text-cyan-200"
                     )}
                   >
                     {/* Artist */}
-                    <div className="flex-[2] text-xs font-bold uppercase tracking-wide truncate pr-4 opacity-80">
+                    <div className="flex-[2] text-xs font-bold uppercase tracking-wide truncate pr-4 opacity-80 flex items-center gap-2">
+                      {tab === 'community' && isSongBookmarked(song) && <Heart className="w-3 h-3 fill-cyan-400 text-cyan-400" />}
+                      {tab === 'my' && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="relative group/storage">
+                              {song.isCloud ? (
+                                <>
+                                  <div className="absolute -inset-1 bg-cyan-500/20 blur-[2px] rounded-full opacity-0 group-hover/storage:opacity-100 transition-opacity" />
+                                  <Cloud className="relative w-3 h-3 text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.5)]" />
+                                </>
+                              ) : (
+                                <HardDrive className="relative w-3 h-3 text-white/30" />
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black/90 border-white/10 text-white font-bold uppercase tracking-widest text-[8px] py-1 px-2">
+                            {song.isCloud ? 'Cloud Synced' : 'Local Only'}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                       {song.artist}
                     </div>
 
@@ -457,7 +721,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                     <div className="flex-[1] flex justify-center">
                       <span
                         className="w-3 h-3 rounded-none rotate-45 shadow-sm"
-                        style={{ backgroundColor: difficultyColors[song.difficulty] || '#666' }}
+                        style={{ backgroundColor: difficultyColors[String(song.difficulty).toLowerCase()] || '#666' }}
                       />
                     </div>
 
@@ -493,18 +757,69 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               >
                 {/* Compact Header with Smaller Image */}
                 <div className="flex items-center p-6 gap-6 bg-white/[0.02] border-b border-white/5">
-                  {/* Album Art (Smaller) */}
-                  <div className="relative w-32 h-32 rounded-none skew-x-[-12deg] bg-black box-border border border-white/10 shadow-lg overflow-hidden flex-none group">
-                    <div className="absolute inset-0 flex items-center justify-center text-white/10 skew-x-[12deg]">
-                      {iconMap[selectedSong.icon || 'music']}
-                    </div>
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer skew-x-[12deg]" onClick={handlePlaySelected}>
+                  {/* Album Art / YouTube Preview */}
+                  <div className="relative w-48 h-28 rounded-none skew-x-[-12deg] bg-black box-border border border-white/10 shadow-lg overflow-hidden flex-none group">
+                    {selectedSong.coverUrl ? (
+                      <img src={selectedSong.coverUrl} className="w-full h-full object-cover skew-x-[12deg] scale-125" alt="" />
+                    ) : getYoutubeId(selectedSong.youtubeUrl || '') ? (
+                      <iframe
+                        className="w-full h-full skew-x-[12deg] scale-[1.4] pointer-events-none grayscale-[0.2] opacity-80"
+                        src={`https://www.youtube.com/embed/${getYoutubeId(selectedSong.youtubeUrl!)}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&loop=1&playlist=${getYoutubeId(selectedSong.youtubeUrl!)}`}
+                        title="YouTube video player"
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-white/10 skew-x-[12deg]">
+                        {iconMap[selectedSong.icon || 'music']}
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer skew-x-[12deg] z-10" onClick={handlePlaySelected}>
                       <Play className="w-12 h-12 text-white drop-shadow-lg" />
                     </div>
                   </div>
 
-                  {/* Titles */}
+                  {/* Titles & Status Badges */}
                   <div className="flex flex-col min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      {/* Difficulty Badge */}
+                      <Badge
+                        variant="outline"
+                        className="rounded-none border-white/20 text-[8px] font-black uppercase tracking-[0.2em] px-2 py-0.5 bg-white/5"
+                        style={{ color: difficultyColors[String(selectedSong.difficulty).toLowerCase()], borderColor: `${difficultyColors[String(selectedSong.difficulty).toLowerCase()]}44` }}
+                      >
+                        {selectedSong.difficulty}
+                      </Badge>
+
+                      {/* Genre Badge */}
+                      {selectedSong.category && (
+                        <Badge
+                          variant="secondary"
+                          className="rounded-none bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[8px] font-black uppercase tracking-[0.2em] px-2 py-0.5"
+                        >
+                          {selectedSong.category}
+                        </Badge>
+                      )}
+
+                      {/* Storage Status Badge (Top) */}
+                      {tab === 'my' && (
+                        <Badge
+                          className={cn(
+                            "rounded-none text-[8px] font-black uppercase tracking-[0.2em] px-2 py-0.5 border transition-all",
+                            selectedSong.isCloud
+                              ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400"
+                              : "bg-white/5 border-white/10 text-white/40"
+                          )}
+                        >
+                          {selectedSong.isCloud ? (
+                            <span className="flex items-center gap-1"><Cloud className="w-2.5 h-2.5" /> Cloud</span>
+                          ) : (
+                            <span className="flex items-center gap-1"><HardDrive className="w-2.5 h-2.5" /> Local</span>
+                          )}
+                        </Badge>
+                      )}
+                    </div>
+
                     <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter leading-[0.9] mb-2 truncate break-words whitespace-normal drop-shadow-md">
                       {selectedSong.title}
                     </h2>
@@ -517,83 +832,137 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                 {/* Expanded Details List (Fills space, no scroll needed mostly) */}
                 <div className="flex-1 p-8 flex flex-col gap-6">
 
-                  {/* Metadata Grid */}
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-                    <div className="space-y-1">
-                      <span className="block text-[10px] font-black uppercase text-white/30 tracking-widest">Charter</span>
-                      <span className="block text-lg font-bold text-white uppercase truncate">{selectedSong.author?.name || 'Unknown'}</span>
+                  {/* Metadata Grid (Condensed) */}
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                    <div className="space-y-0.5">
+                      <span className="block text-[8px] font-black uppercase text-white/20 tracking-widest">Charter</span>
+                      <span className="block text-base font-bold text-white uppercase truncate">{selectedSong.author?.name || 'Unknown'}</span>
                     </div>
-                    <div className="space-y-1 text-right">
-                      <span className="block text-[10px] font-black uppercase text-white/30 tracking-widest">Length</span>
-                      <span className="block text-lg font-bold text-white uppercase font-mono">{Math.floor((selectedSong.duration || 0) / 60)}:{String(Math.floor((selectedSong.duration || 0) % 60)).padStart(2, '0')}</span>
+                    <div className="space-y-0.5 text-right">
+                      <span className="block text-[8px] font-black uppercase text-white/20 tracking-widest">Length</span>
+                      <span className="block text-base font-bold text-white uppercase font-mono">{Math.floor((selectedSong.duration || 0) / 60)}:{String(Math.floor((selectedSong.duration || 0) % 60)).padStart(2, '0')}</span>
                     </div>
-                    <div className="space-y-1">
-                      <span className="block text-[10px] font-black uppercase text-white/30 tracking-widest">Genre</span>
-                      <span className="block text-lg font-bold text-white uppercase truncate">Rock</span>
+                    <div className="space-y-0.5">
+                      <span className="block text-[8px] font-black uppercase text-white/20 tracking-widest">Added</span>
+                      <span className="block text-base font-bold text-white uppercase truncate">
+                        {selectedSong.createdAt ? new Date(selectedSong.createdAt).toLocaleDateString() : '—'}
+                      </span>
                     </div>
-                    <div className="space-y-1 text-right">
-                      <span className="block text-[10px] font-black uppercase text-white/30 tracking-widest">Year</span>
-                      <span className="block text-lg font-bold text-white uppercase truncate">2024</span>
+                    <div className="space-y-0.5 text-right">
+                      {selectedSong.youtubeUrl && (
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="block text-[8px] font-black uppercase text-white/20 tracking-widest">Youtube Source</span>
+                          <a
+                            href={selectedSong.youtubeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-[10px] font-black text-[#FF0000] hover:text-white transition-colors uppercase tracking-widest cursor-pointer group/yt"
+                          >
+                            <span>Watch Original</span>
+                            <Youtube className="w-3.5 h-3.5 group-hover/yt:scale-110 transition-transform" />
+                          </a>
+                        </div>
+                      )}
+                      {tab === 'my' && !selectedSong.isCloud && isAuthenticated && (
+                        <button
+                          onClick={() => onEditSong?.(selectedSong)}
+                          className="text-[9px] font-black text-cyan-400 hover:text-cyan-300 uppercase tracking-widest border-b border-cyan-400/30 hover:border-cyan-400 transition-all cursor-pointer"
+                        >
+                          Sync Now
+                        </button>
+                      )}
                     </div>
                   </div>
 
                   <div className="h-px bg-white/5 w-full my-2" />
 
-                  {/* Difficulty Badge & Social Stats */}
-                  <div className="flex flex-col gap-6">
+                  {/* Social & Rating Actions */}
+                  <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between">
-                      <div className="flex flex-col gap-2 flex-1">
-                        <span className="text-[10px] font-black italic uppercase text-white/30 tracking-widest">Difficulty</span>
-                        <div className="flex items-center gap-4">
-                          <div
-                            className="h-10 px-4 rounded-none skew-x-[-12deg] flex items-center justify-center font-black italic uppercase text-black shadow-[0_0_15px_rgba(0,0,0,0.3)]"
-                            style={{ backgroundColor: difficultyColors[selectedSong.difficulty] }}
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[10px] font-black italic uppercase text-white/30 tracking-widest">Community Rating</span>
+                        {!isAuthenticated ? (
+                          <button
+                            onClick={() => openAuth()}
+                            className="flex items-center gap-2 group cursor-pointer"
                           >
-                            <span className="skew-x-[12deg]">
-                              {selectedSong.difficulty}
+                            <div className="flex items-center gap-1 opacity-20 group-hover:opacity-40 transition-opacity">
+                              {[1, 2, 3, 4, 5].map(s => <Star key={s} className="w-4 h-4 text-white" />)}
+                            </div>
+                            <span className="text-[9px] font-bold uppercase tracking-widest text-cyan-400/60 group-hover:text-cyan-400 italic">
+                              Sign In to Rate
                             </span>
+                          </button>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            {selectedSong.author?.id === user?.id ? (
+                              <div className="flex items-center gap-2 opacity-50 grayscale pointer-events-none">
+                                <div className="flex items-center gap-1">
+                                  {[1, 2, 3, 4, 5].map(s => (
+                                    <Star
+                                      key={s}
+                                      className={cn(
+                                        "w-4 h-4",
+                                        s <= Math.round(selectedSong.averageRating || 0) ? "text-yellow-500 fill-yellow-500" : "text-white/10"
+                                      )}
+                                    />
+                                  ))}
+                                </div>
+                                <span className="text-[8px] font-bold uppercase tracking-widest text-white/40 italic">
+                                  You cannot rate your own track
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1">
+                                  {[1, 2, 3, 4, 5].map((s) => (
+                                    <button
+                                      key={s}
+                                      onClick={(e) => { e.stopPropagation(); handleRate(selectedSong.id, s); }}
+                                      className="group cursor-pointer"
+                                    >
+                                      <Star className={cn(
+                                        "w-4 h-4 transition-all",
+                                        s <= (selectedSong.userRating || Math.round(selectedSong.averageRating || 0))
+                                          ? "text-yellow-500 fill-yellow-500"
+                                          : "text-white/10 group-hover:text-yellow-500/50"
+                                      )} />
+                                    </button>
+                                  ))}
+                                </div>
+                                <span className="text-[10px] font-black italic text-white/40 ml-1">
+                                  {selectedSong.averageRating ? Number(selectedSong.averageRating).toFixed(1) : "—"}
+                                  <span className="text-[8px] opacity-50 ml-1">({selectedSong.voteCount || 0})</span>
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        </div>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      {tab === 'community' && (selectedSong.isCloud || selectedSong.isPublic) && (
                         <button
-                          onClick={() => handleLike(selectedSong.id)}
+                          onClick={() => handleToggleBookmark(selectedSong)}
+                          disabled={isBookmarking === selectedSong.id}
                           className={cn(
-                            "group flex items-center gap-2 px-6 py-3 rounded-none skew-x-[-12deg] border transition-all cursor-pointer",
-                            selectedSong.isLiked
+                            "group flex items-center gap-2 px-4 py-2 rounded-none skew-x-[-12deg] border transition-all h-fit",
+                            isBookmarking === selectedSong.id ? "opacity-50 cursor-wait" : "cursor-pointer",
+                            isSongBookmarked(selectedSong)
                               ? "bg-cyan-500/10 border-cyan-500 text-cyan-400"
                               : "bg-white/5 border-white/10 text-white/40 hover:text-white hover:border-white/20"
                           )}
-                          title="Bookmark Song"
+                          title={isAuthenticated ? "Bookmark Song" : "Guest Bookmark"}
                         >
-                          <Heart className={cn("w-4 h-4 skew-x-[12deg]", selectedSong.isLiked && "fill-cyan-500")} />
-                          <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-wider">BOOKMARK</span>
+                          {isBookmarking === selectedSong.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin skew-x-[12deg] text-cyan-400" />
+                          ) : (
+                            <Heart className={cn("w-3 h-3 skew-x-[12deg]", isSongBookmarked(selectedSong) && "fill-cyan-500")} />
+                          )}
+                          <span className="skew-x-[12deg] text-[10px] font-black italic uppercase tracking-wider">
+                            {isBookmarking === selectedSong.id ? "SAVING..." : (isSongBookmarked(selectedSong) ? "BOOKMARKED" : "BOOKMARK")}
+                          </span>
                         </button>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 h-1.5 bg-white/10 rounded-none overflow-hidden skew-x-[-12deg]">
-                      <div
-                        className="h-full rounded-none"
-                        style={{
-                          width: selectedSong.difficulty === 'easy' ? '25%' : selectedSong.difficulty === 'medium' ? '50%' : selectedSong.difficulty === 'hard' ? '75%' : '100%',
-                          backgroundColor: difficultyColors[selectedSong.difficulty]
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Rating System (WIP) */}
-                  <div className="flex flex-col gap-3">
-                    <span className="text-[10px] font-black italic uppercase text-white/30 tracking-widest">Community Rating</span>
-                    <div className="flex items-center gap-2">
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <button key={s} className="group cursor-pointer">
-                          <Star className={cn("w-6 h-6 transition-all", s <= 4 ? "text-yellow-500 fill-yellow-500" : "text-white/10 group-hover:text-yellow-500/50")} />
-                        </button>
-                      ))}
-                      <span className="ml-2 text-sm font-bold text-white/60">4.0 (12 votes)</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -649,29 +1018,73 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
       {/* Delete Modal */}
       <AnimatePresence>
         {showDeleteConfirm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md">
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#111] border border-white/10 p-8 max-w-md w-full shadow-2xl rounded-xl"
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-[#0a0a0f] border border-red-500/20 p-10 max-w-md w-full shadow-[0_0_50px_rgba(239,68,68,0.15)] overflow-hidden"
             >
-              <h3 className="text-2xl font-black italic text-white uppercase mb-4">Delete Song?</h3>
-              <p className="text-white/60 mb-8">
-                This action cannot be undone. <span className="text-white font-bold">{activeSongs.find(s => s.id === showDeleteConfirm)?.title}</span> will be permanently removed.
-              </p>
-              <div className="flex gap-4">
-                <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white font-bold uppercase text-xs tracking-widest rounded transition-colors">Cancel</button>
-                <button
-                  onClick={() => {
-                    if (onDeleteSong && showDeleteConfirm) onDeleteSong(showDeleteConfirm);
-                    setShowDeleteConfirm(null);
-                    setSelectedSongId(null);
-                  }}
-                  className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white font-bold uppercase text-xs tracking-widest rounded transition-colors shadow-lg"
-                >
-                  Delete
-                </button>
+              {/* Background Accent */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-[60px] rounded-full -mr-16 -mt-16" />
+
+              <div className="relative z-10">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 bg-red-500/10 flex items-center justify-center border border-red-500/20 skew-x-[-12deg]">
+                    <AlertTriangle className="w-6 h-6 text-red-500 skew-x-[12deg]" />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-black italic text-white uppercase tracking-tighter leading-none">Delete Track</h3>
+                    <p className="text-[10px] font-bold text-red-500/60 uppercase tracking-[0.2em] mt-1">Permanent Action</p>
+                  </div>
+                </div>
+
+                <p className="text-sm text-white/60 mb-10 leading-relaxed font-medium">
+                  You're about to remove <span className="text-white font-black italic">"{activeSongs.find(s => s.id === showDeleteConfirm)?.title}"</span>. This will erase the data from all storage locations.
+                </p>
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setShowDeleteConfirm(null)}
+                    className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-[0.2em] skew-x-[-12deg] transition-all border border-white/10 cursor-pointer"
+                  >
+                    <span className="skew-x-[12deg] block">Cancel</span>
+                  </button>
+                  <button
+                    disabled={isDeleting}
+                    onClick={async () => {
+                      const song = activeSongs.find(s => s.id === showDeleteConfirm);
+                      if (onDeleteSong && song) {
+                        setIsDeleting(true);
+                        try {
+                          await onDeleteSong(song);
+                          if (song.isCloud) {
+                            await fetchUserSongs();
+                          }
+                        } finally {
+                          setIsDeleting(false);
+                        }
+                      }
+                      setShowDeleteConfirm(null);
+                      setSelectedSongId(null);
+                    }}
+                    className={cn(
+                      "flex-1 py-4 bg-red-600 hover:bg-red-500 text-white font-black uppercase text-[10px] tracking-[0.2em] skew-x-[-12deg] transition-all shadow-[0_4px_20px_rgba(220,38,38,0.3)] cursor-pointer flex items-center justify-center gap-2",
+                      isDeleting && "opacity-70 cursor-wait"
+                    )}
+                  >
+                    <div className="skew-x-[12deg] flex items-center gap-2">
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>DELETING...</span>
+                        </>
+                      ) : (
+                        <span>Delete Now</span>
+                      )}
+                    </div>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

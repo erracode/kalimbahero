@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AUTH_QUERY_KEY } from '@/hooks/useAuth'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { User, LogOut, Music, Star } from 'lucide-react'
+import { useSongStore } from '@/stores/songStore'
 
 interface ProfilePanelProps {
     session: any;
@@ -13,6 +14,10 @@ interface ProfilePanelProps {
 export function ProfilePanel({ session, onClose }: ProfilePanelProps) {
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    const { songs } = useSongStore()
+
+    const mySongsCount = songs.filter(s => !s.cloudId).length
+    const bookmarksCount = songs.filter(s => s.isFavorited || s.isLiked).length
 
     const handleSignOut = async () => {
         await signOut({
@@ -70,14 +75,14 @@ export function ProfilePanel({ session, onClose }: ProfilePanelProps) {
                 <div className="px-6 py-4 bg-white/5 border border-white/10 rounded-none skew-x-[-12deg] flex flex-col items-center justify-center gap-1 hover:bg-white/10 transition-colors">
                     <div className="skew-x-[12deg] flex items-center gap-2">
                         <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                        <span className="text-white font-black italic text-xl">0</span>
+                        <span className="text-white font-black italic text-xl">{bookmarksCount}</span>
                     </div>
                     <span className="skew-x-[12deg] text-white/40 text-[10px] font-black italic uppercase tracking-widest">Stars</span>
                 </div>
                 <div className="px-6 py-4 bg-white/5 border border-white/10 rounded-none skew-x-[-12deg] flex flex-col items-center justify-center gap-1 hover:bg-white/10 transition-colors">
                     <div className="skew-x-[12deg] flex items-center gap-2">
                         <Music className="w-4 h-4 text-purple-500 fill-purple-500" />
-                        <span className="text-white font-black italic text-xl">0</span>
+                        <span className="text-white font-black italic text-xl">{mySongsCount}</span>
                     </div>
                     <span className="skew-x-[12deg] text-white/40 text-[10px] font-black italic uppercase tracking-widest">Songs</span>
                 </div>
@@ -85,7 +90,7 @@ export function ProfilePanel({ session, onClose }: ProfilePanelProps) {
 
             {/* Actions */}
             <div className="space-y-4 pt-4 border-t border-white/10">
-                <div className="bg-black/40 border border-white/10 p-6 rounded-none skew-x-[-12deg] flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-all" onClick={() => { onClose(); navigate({ to: '/song-builder' }) }}>
+                <div className="bg-black/40 border border-white/10 p-6 rounded-none skew-x-[-12deg] flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-all" onClick={() => { onClose(); navigate({ to: '/library', search: { view: 'my-tabs' } }) }}>
                     <div className="skew-x-[12deg] flex items-center gap-4">
                         <div className="p-2 bg-cyan-500/20 rounded-none">
                             <Music className="w-5 h-5 text-cyan-400" />
@@ -97,7 +102,7 @@ export function ProfilePanel({ session, onClose }: ProfilePanelProps) {
                     </div>
                 </div>
 
-                <div className="bg-black/40 border border-white/10 p-6 rounded-none skew-x-[-12deg] flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-all" onClick={() => { onClose(); navigate({ to: '/' }) }}>
+                <div className="bg-black/40 border border-white/10 p-6 rounded-none skew-x-[-12deg] flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-all" onClick={() => { onClose(); navigate({ to: '/library', search: { view: 'bookmarks' } }) }}>
                     <div className="skew-x-[12deg] flex items-center gap-4">
                         <div className="p-2 bg-yellow-500/20 rounded-none">
                             <Star className="w-5 h-5 text-yellow-400" />

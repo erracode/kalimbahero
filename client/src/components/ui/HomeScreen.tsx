@@ -4,8 +4,8 @@ import { Library, Wrench, Mic2, User, LogIn } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { useUIStore } from '@/stores/uiStore';
 import { SkewedSheet } from './SkewedSheet';
-import { AuthPanel } from '../auth/AuthPanel';
 import { ProfilePanel } from '../profile/ProfilePanel';
 
 interface HomeScreenProps {
@@ -20,8 +20,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onTuner,
 }) => {
   const { session } = useAuth();
+  const { openAuth } = useUIStore();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [showAuthSheet, setShowAuthSheet] = useState(false);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
 
   const isLoggedIn = !!session;
@@ -34,7 +34,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     {
       label: isLoggedIn ? (userName || 'PROFILE') : 'LOGIN',
       icon: isLoggedIn ? <User className="w-6 h-6" /> : <LogIn className="w-6 h-6" />,
-      action: () => isLoggedIn ? setShowProfileSheet(true) : setShowAuthSheet(true),
+      action: () => isLoggedIn ? setShowProfileSheet(true) : openAuth(),
       variant: 'pink' as const,
       desc: isLoggedIn ? 'View your stats and settings' : 'Sign in to sync your progress'
     },
@@ -138,14 +138,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </div>
 
 
-      {/* Side Sheets */}
-      <SkewedSheet
-        isOpen={showAuthSheet}
-        onClose={() => setShowAuthSheet(false)}
-        side="left"
-      >
-        <AuthPanel onAuthSuccess={() => setShowAuthSheet(false)} />
-      </SkewedSheet>
+
 
       <SkewedSheet
         isOpen={showProfileSheet}

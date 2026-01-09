@@ -73,7 +73,9 @@ export interface Song {
   isLiked?: boolean;
   isFavorited?: boolean;
   youtubeUrl?: string;
+  category?: string;
   averageRating?: number; // 1-5
+  voteCount?: number;
   userRating?: number;    // 1-5
 }
 
