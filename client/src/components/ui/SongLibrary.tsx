@@ -45,6 +45,8 @@ interface SongLibraryProps {
     category?: string;
     view?: 'all' | 'bookmarks' | 'my-tabs';
     bookmarks?: boolean;
+    tuning?: string;
+    tines?: number;
   };
 }
 
@@ -65,6 +67,12 @@ const difficultyColors: Record<string, string> = {
   hard: '#FF8E53', // Orange
   expert: '#FF6B6B', // Red
 };
+
+const SONG_CATEGORIES = [
+  'Pop', 'Anime', 'Rock', 'OST', 'Classical', 'Game',
+  'Valentine', 'Christmas', 'Halloween', 'Meme', 'Disney',
+  'TV', 'K-pop', 'Movies', 'Nursery rhymes', 'Traditional', 'Worship'
+];
 
 // Helper to extract YouTube ID
 const getYoutubeId = (url: string) => {
@@ -97,6 +105,8 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   const showFavorites = searchParams.bookmarks || searchParams.view === 'bookmarks';
   const searchQuery = searchParams.q || '';
   const activeCategory = searchParams.category || 'all';
+  const activeTuning = searchParams.tuning || 'all';
+  const activeTines = searchParams.tines || 'all';
 
   const [communitySongs, setCommunitySongs] = useState<Song[]>([]);
   const [userSongs, setUserSongs] = useState<Song[]>([]);
@@ -139,6 +149,8 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         // Clean up empty/all filters
         if ((next.difficulty as any) === 'all') delete next.difficulty;
         if ((next.category as any) === 'all') delete next.category;
+        if ((next.tuning as any) === 'all') delete next.tuning;
+        if ((next.tines as any) === 'all') delete next.tines;
         if (next.q === '') delete next.q;
         return next;
       },
@@ -204,6 +216,8 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         ...(showFavorites && isAuthenticated && { favoritesOnly: 'true' }),
         ...(searchQuery && { q: searchQuery }),
         ...(activeCategory !== 'all' && { category: activeCategory }),
+        ...(activeTuning !== 'all' && { tuning: activeTuning }),
+        ...(activeTines !== 'all' && { tines: activeTines.toString() }),
       });
 
       const res = await fetch(`http://localhost:3000/api/songs?${params}`, {
@@ -346,7 +360,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     } else if (tab === 'my') {
       fetchUserSongs();
     }
-  }, [filter, page, showFavorites, tab, sort, searchQuery, activeCategory, isAuthenticated, guestBookmarks, user?.id]);
+  }, [filter, page, showFavorites, tab, sort, searchQuery, activeCategory, activeTuning, activeTines, isAuthenticated, guestBookmarks, user?.id]);
 
   const activeSongs = useMemo(() => {
     if (tab === 'my') {
@@ -391,8 +405,13 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
 
     // Category Filter (Client Side fallback)
     if (activeCategory !== 'all') {
-      // Assuming song has category field, or fallback to generic
-      // result = result.filter(s => s.category === activeCategory);
+      result = result.filter(s => s.category === activeCategory);
+    }
+
+    // Tuning/Tines Client Side Filter for 'My'
+    if (tab === 'my') {
+      if (activeTuning !== 'all') result = result.filter(s => s.authorTuning === activeTuning);
+      if (activeTines !== 'all') result = result.filter(s => s.authorTineCount === Number(activeTines));
     }
 
     return result;
@@ -589,6 +608,43 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                 <SelectItem value="soundtrack">OST</SelectItem>
                 <SelectItem value="classical">CLASSICAL</SelectItem>
                 <SelectItem value="game">GAME</SelectItem>
+                {SONG_CATEGORIES.map(cat => (
+                  <SelectItem key={cat} value={cat.toLowerCase().replace(/\s/g, '-')}>{cat}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 text-[10px] font-black italic uppercase tracking-[0.2em] text-white/30 mr-2">
+              <span>Tuning:</span>
+            </div>
+            <Select value={activeTuning} onValueChange={(val) => updateSearch({ tuning: val === 'all' ? undefined : val })}>
+              <SelectTrigger className="w-[100px] bg-black/40 border-white/10 text-white text-xs font-bold uppercase tracking-wider rounded-none skew-x-[-12deg] focus:ring-cyan-500/50">
+                <SelectValue placeholder="TUNING" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#111] border-white/10 text-white ">
+                <SelectItem value="all">ALL</SelectItem>
+                {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(n => (
+                  <SelectItem key={n} value={n}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 text-[10px] font-black italic uppercase tracking-[0.2em] text-white/30 mr-2">
+              <span>Tines:</span>
+            </div>
+            <Select value={activeTines.toString()} onValueChange={(val) => updateSearch({ tines: val === 'all' ? undefined : parseInt(val) })}>
+              <SelectTrigger className="w-[120px] bg-black/40 border-white/10 text-white text-xs font-bold uppercase tracking-wider rounded-none skew-x-[-12deg] focus:ring-cyan-500/50">
+                <SelectValue placeholder="TINES" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#111] border-white/10 text-white ">
+                <SelectItem value="all">ALL</SelectItem>
+                {[8, 9, 10, 13, 17, 21, 34].map(t => (
+                  <SelectItem key={t} value={t.toString()}>{t} TINES</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -846,6 +902,18 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                       <span className="block text-[8px] font-black uppercase text-white/20 tracking-widest">Added</span>
                       <span className="block text-base font-bold text-white uppercase truncate">
                         {selectedSong.createdAt ? new Date(selectedSong.createdAt).toLocaleDateString() : '—'}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <span className="block text-[8px] font-black uppercase text-white/20 tracking-widest">Tuning</span>
+                      <span className="block text-base font-bold text-cyan-400 uppercase truncate">
+                        {selectedSong.authorTuning || 'C'} Major
+                      </span>
+                    </div>
+                    <div className="space-y-0.5 text-right">
+                      <span className="block text-[8px] font-black uppercase text-white/20 tracking-widest">Hardware</span>
+                      <span className="block text-base font-bold text-white uppercase truncate">
+                        {selectedSong.authorTineCount || 17} Tines
                       </span>
                     </div>
                     <div className="space-y-0.5 text-right">

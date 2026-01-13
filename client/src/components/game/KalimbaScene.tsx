@@ -31,11 +31,14 @@ const SceneContent: React.FC<KalimbaSceneProps> = ({
   const settings = useGameStore((state) => state.settings)
   const activeNotes = useGameStore((state) => state.activeNotes)
 
+  // Get total lanes from hardware preset
+  const totalLanes = parseInt(settings.hardwarePresetId) || 17
+
   // Generate lane configurations - lanes are 25 units long
   const laneLength = 25
   const laneConfigs = useMemo(
-    () => generateLaneConfigs(0.75, 0.15, laneLength),
-    [laneLength]
+    () => generateLaneConfigs(totalLanes),
+    [totalLanes]
   )
 
   // Hit zone Z position - exactly at the front end of lanes where notes reach the kalimba

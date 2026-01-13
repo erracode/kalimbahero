@@ -8,12 +8,13 @@ import { useFrame } from "@react-three/fiber"
 import { Html, RoundedBox } from "@react-three/drei"
 import * as THREE from "three"
 import {
-  KALIMBA_KEYS,
   getKeyColor,
   getKeyDisplayLabel,
   getLaneXPosition,
-  TOTAL_LANES,
+  getKalimbaConfig,
 } from "@/utils/frequencyMap"
+import { useGameStore } from "@/stores/gameStore"
+import type { KalimbaKey } from "@/types/game"
 
 interface LaneLabelsProps {
   position?: [number, number, number]
@@ -23,33 +24,36 @@ interface LaneLabelsProps {
 
 // Calculate tine height for inverted triangle pattern
 // Center key (index 10) is tallest, decreasing towards edges
-const getTineHeight = (index: number): number => {
-  const center = 10 // F 4° is at index 10
+const getTineHeight = (index: number, total: number): number => {
+  const center = Math.floor(total / 2)
   const distanceFromCenter = Math.abs(index - center)
   const maxHeight = 2.0
   const minHeight = 0.8
   // Inverted triangle: tallest at center
-  return maxHeight - (distanceFromCenter * (maxHeight - minHeight)) / center
+  return maxHeight - (distanceFromCenter * (maxHeight - minHeight)) / Math.max(1, center)
 }
 
 // Individual label tine
 const LabelTine = ({
-  keyIndex,
+  keyInfo,
+  totalLanes,
   isActive,
 }: {
-  keyIndex: number
+  keyInfo: KalimbaKey
+  totalLanes: number
   isActive: boolean
 }) => {
+  const keyIndex = keyInfo.index
   const meshRef = useRef<THREE.Mesh>(null)
   const glowRef = useRef<THREE.Mesh>(null)
 
-  const height = getTineHeight(keyIndex)
-  const baseColor = getKeyColor(keyIndex)
-  const label = getKeyDisplayLabel(keyIndex)
-  const xPosition = getLaneXPosition(keyIndex)
+  const height = getTineHeight(keyIndex, totalLanes)
+  const baseColor = getKeyColor(keyIndex, totalLanes)
+  const label = getKeyDisplayLabel(keyInfo)
+  const xPosition = getLaneXPosition(keyIndex, totalLanes)
 
-  // Center key (F/4° at position 10) is special
-  const isCenterKey = keyIndex === 10
+  // Center key is tallest
+  const isCenterKey = keyIndex === Math.floor(totalLanes / 2)
 
   useFrame((state) => {
     if (meshRef.current && glowRef.current) {
@@ -161,6 +165,13 @@ export const LaneLabels: React.FC<LaneLabelsProps> = ({
   activeKeyIndices = [],
   showLabels = true,
 }) => {
+  const settings = useGameStore(state => state.settings);
+  const totalLanesCount = parseInt(settings.hardwarePresetId) || 17;
+
+  const kalimbaKeys = useMemo(() => {
+    return getKalimbaConfig(totalLanesCount, settings.userTuning);
+  }, [totalLanesCount, settings.userTuning]);
+
   // Ensure activeKeyIndices is always an array
   const safeActiveKeys = Array.isArray(activeKeyIndices) ? activeKeyIndices : []
 
@@ -168,12 +179,13 @@ export const LaneLabels: React.FC<LaneLabelsProps> = ({
 
   return (
     <group position={position}>
-      {/* All 21 label tines */}
-      {KALIMBA_KEYS.map((_, index) => (
+      {/* Dynamic label tines */}
+      {kalimbaKeys.map((key) => (
         <LabelTine
-          key={`label-${index}`}
-          keyIndex={index}
-          isActive={safeActiveKeys.includes(index)}
+          key={`label-${key.index}`}
+          keyInfo={key}
+          totalLanes={totalLanesCount}
+          isActive={safeActiveKeys.includes(key.index)}
         />
       ))}
     </group>

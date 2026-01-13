@@ -51,6 +51,9 @@ const DEFAULT_SETTINGS: GameSettings = {
   showNotation: true,
   showLaneNumbers: true,
   audioLatency: 0,
+  hardwarePresetId: '17',
+  userTuning: 'C',
+  labelType: 'numbers',
 };
 
 const DEFAULT_SCORE: GameScore = {

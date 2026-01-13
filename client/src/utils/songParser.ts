@@ -2,18 +2,9 @@
 // Kalimba Hero - Song Parser
 // ============================================
 // Parses standard kalimba tablature notation
-// 
-// Notation format (standard kalimba tabs):
-// - Numbers 1-7 represent scale degrees (Do Re Mi Fa Sol La Si)
-// - ° or * or ' after number = one octave up (e.g., 1° or 1*)
-// - °° or ** or '' = two octaves up
-// - Spaces separate sequential notes
-// - Newlines separate measures/phrases
-// - Notes on same line without spaces = quick succession
-// - Parentheses group simultaneous notes (chords): (1 3 5)
 
 import type { Song, SongNote, Difficulty, TimeSignature } from '@/types/game';
-import { NOTATION_TO_KEY_INDEX, parseScaleNotation, findKeyByScaleNotation } from './frequencyMap';
+import { generateKalimbaLayout } from './frequencyMap';
 
 // Generate unique ID
 const generateId = (): string => {
@@ -22,139 +13,88 @@ const generateId = (): string => {
 
 interface ParseOptions {
   bpm: number;
-  timeSignature?: TimeSignature; // Used to determine grid division
-  beatDuration?: number;  // Duration per beat in beats (default: 1/gridDivision)
-  restSymbol?: string;    // Symbol for rests (default '-' or '_')
+  timeSignature?: TimeSignature;
+  authorTuning?: string;
+  authorScale?: string;
+  authorTineCount?: number;
 }
 
-// Convert beats to seconds
-const beatsToSeconds = (beats: number, bpm: number): number => {
-  return (beats * 60) / bpm;
+
+
+/**
+ * Builds a mapping from notation (e.g., "1°") to the dynamic keyIndex of the kalimba configuration.
+ */
+const getNotationMap = (tinesCount: number, tuning: string, scale: string = 'Major') => {
+  const keys = generateKalimbaLayout(tinesCount, tuning, scale);
+  const map = new Map<string, number>();
+
+  keys.forEach(key => {
+    // Both degree and note notation can be used
+    map.set(key.displayDegree, key.index);
+    map.set(key.displayNote, key.index);
+    // Simple degree without dots if it's the base octave
+    if (!key.octaveMarker) {
+      map.set(key.scaleDegree.toString(), key.index);
+    }
+  });
+
+  return map;
 };
 
-// Parse a single note token (e.g., "1", "1°", "1*", "5°°")
-const parseNoteToken = (token: string): number | null => {
+// Parse a single note token with smart normalization and range scaling
+const parseNoteToken = (token: string, notationMap: Map<string, number>, _tinesCount: number, _tuning: string): number | null => {
   const trimmed = token.trim();
   if (!trimmed) return null;
+  if (['-', '_', 'r', 'R'].includes(trimmed)) return -1; // Explicit rest
 
-  // Check for rest symbols
-  if (trimmed === '-' || trimmed === '_' || trimmed === 'r' || trimmed === 'R') {
-    return -1; // -1 indicates rest
-  }
-
-  // Normalize octave markers: convert * to °, ' to °
+  // Normalize: * -> °, ' -> °, . -> (dot below - handled as notation variation?)
+  // User spec: "1." -> "1 with dot below".  We usually stick to standard strings.
+  // We will normalize to standard "1", "1°", "1°°", "1°°°" format if possible, 
+  // or rely on what generateKalimbaLayout produces.
+  // The layout generator produces: "1", "1°", "1°°".
+  // If user input is "1*", we map to "1°".
   let normalized = trimmed
     .replace(/\*\*/g, '°°')
     .replace(/\*/g, '°')
     .replace(/''/g, '°°')
-    .replace(/'/g, '°');
+    .replace(/'/g, '°')
+    .replace(/\./g, ''); // Remove dot for now or map to lower octave? 
+  // If we support lower octave, we need a convention. "1." usually means lower octave.
+  // Our layout generator currently only supports BASE and HIGHER octaves (using dots).
+  // The 21-key layout has a center F3. If that is "1", then lower E3 is "7.".
+  // If the map has "7.", we should match it.
+  // Let's assume the map contains whatever keys.displayDegree has.
 
-  // Try to find in our lookup map
-  const keyIndex = NOTATION_TO_KEY_INDEX.get(normalized);
-  if (keyIndex !== undefined) {
-    return keyIndex;
+  // Try exact match first
+  let keyIndex = notationMap.get(normalized);
+  if (keyIndex !== undefined) return keyIndex;
+
+  // Try raw match (without normalization if map has quirky keys)
+  keyIndex = notationMap.get(trimmed);
+  if (keyIndex !== undefined) return keyIndex;
+
+  // Auto-scaling / Fallback:
+  // If "1°°" not found, try "1°".
+  if (normalized.includes('°°')) {
+    const lower = normalized.replace('°°', '°');
+    keyIndex = notationMap.get(lower);
+    if (keyIndex !== undefined) return keyIndex; // Downgrade octave
+  }
+  if (normalized.includes('°')) {
+    const lower = normalized.replace('°', '');
+    keyIndex = notationMap.get(lower);
+    if (keyIndex !== undefined) return keyIndex; // Downgrade octave
   }
 
-  // Try parsing as scale notation
-  const notation = parseScaleNotation(normalized);
-  if (notation) {
-    const index = findKeyByScaleNotation(notation);
-    if (index !== null) {
-      return index;
-    }
-  }
-
-  // Fallback: try parsing as simple number (1-7 with no octave marker)
-  const simpleMatch = normalized.match(/^(\d)$/);
+  // Fallback for simple numbers
+  const simpleMatch = normalized.match(/^([1-7])/); // Match the number part
   if (simpleMatch) {
-    const degree = parseInt(simpleMatch[1]);
-    if (degree >= 1 && degree <= 7) {
-      // Find the base octave version (center of kalimba)
-      const baseIndex = NOTATION_TO_KEY_INDEX.get(`${degree}`);
-      if (baseIndex !== undefined) {
-        return baseIndex;
-      }
-    }
-  }
-
-  return null;
-};
-
-// Parse a line of tablature - only supports explicit parentheses chords
-// Numbers without parentheses are treated as individual notes, not compact chords
-const parseLine = (line: string): string[] => {
-  const tokens: string[] = [];
-  let current = '';
-  let inChord = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-
-    if (char === '(') {
-      if (current.trim()) {
-        // Push any accumulated token before starting chord
-        tokens.push(current.trim());
-        current = '';
-      }
-      inChord = true;
-      current = '(';
-    } else if (char === ')') {
-      current += ')';
-      tokens.push(current);
-      current = '';
-      inChord = false;
-    } else if (char === ' ' || char === '\t') {
-      if (inChord) {
-        current += ' ';
-      } else if (current.trim()) {
-        // Push token as-is (no compact chord detection)
-        tokens.push(current.trim());
-        current = '';
-      }
-    } else {
-      current += char;
-    }
-  }
-
-  // Handle remaining token
-  if (current.trim()) {
-    tokens.push(current.trim());
-  }
-
-  return tokens;
-};
-
-// Detect and convert compact chords like "135" or "461'" to "(1 3 5)" or "(4 6 1')"
-const detectCompactChord = (token: string): string | null => {
-  // Must start with a number 1-7
-  if (!/^[1-7]/.test(token)) return null;
-
-  // Find all numbers in the token
-  const numbers = token.match(/[1-7]/g);
-  if (!numbers || numbers.length < 2) return null; // Must have at least 2 numbers
-
-  // Split the token into individual notes with their octave markers
-  const notes: string[] = [];
-  let i = 0;
-
-  while (i < token.length) {
-    if (/[1-7]/.test(token[i])) {
-      let note = token[i];
-      i++;
-      // Collect octave markers (*, °, ') that follow
-      while (i < token.length && /[*°']/.test(token[i])) {
-        note += token[i];
-        i++;
-      }
-      notes.push(note);
-    } else {
-      i++;
-    }
-  }
-
-  // Only treat as chord if we found multiple distinct notes
-  if (notes.length >= 2) {
-    return `(${notes.join(' ')})`;
+    const degree = simpleMatch[1];
+    // Try to find the "middle" occurrence of this degree in the map?
+    // notationMap is string -> index. Indices are unique.
+    // We already tried looking up the degree.
+    // If not found, it's likely invalid.
+    return notationMap.get(degree) ?? null;
   }
 
   return null;
@@ -164,123 +104,141 @@ export const parseSongNotation = (
   notation: string,
   options: ParseOptions
 ): SongNote[] => {
-  const { bpm, timeSignature = '4/4' } = options;
-  // Use sub-beat grid based on time signature denominator (matching ChartEditor)
-  const gridDivision = parseInt(timeSignature.split('/')[1]);
-  const subBeatDuration = 1 / gridDivision; // Duration per grid cell in beats
-  const beatDuration = options.beatDuration ?? subBeatDuration;
+  const { bpm, timeSignature: _ts = '4/4', authorTuning = 'C', authorScale = 'Major', authorTineCount = 17 } = options;
+  // const gridDivision = parseInt(timeSignature.split('/')[1]); // e.g. 4
+  const subBeatDuration = 60 / bpm; // 1 beat duration (e.g. quarter note) 
+  // Wait, subBeatDuration usually depends on gridDivision? 
+  // If timeSig is 4/4, beat is 1/4 note. 
+  // If input is "1 2 3", each is a beat.
+  // Standard logic: A "token" is a beat (unless subdivided).
+
+  const notationMap = getNotationMap(authorTineCount, authorTuning, authorScale);
   const notes: SongNote[] = [];
   let currentTime = 0;
 
-  // Split by lines first
+  // Split by newlines to process line by line (optional, but good for structure)
   const lines = notation.split(/\n/);
 
   for (const line of lines) {
-    // Skip empty lines
-    if (!line.trim()) {
-      continue;
-    }
+    if (!line.trim()) continue;
 
-    // Parse tokens from the line
-    // In kalimbatabs.net style: each token separated by space = one beat
-    // Tokens without spaces like "467" = multiple notes in consecutive beats (one per beat)
-    const tokens = parseLine(line);
+    // Advanced Tokenization:
+    // We want to split by space, BUT preserve empty slots for rests.
+    // "1  2" -> "1", "", "2".
+    // Regex split by space but keep empty?
+    // String.split(' ') does exactly that.
 
-    for (const token of tokens) {
-      // Check for chord (simultaneous notes in parentheses)
-      if (token.startsWith('(') && token.endsWith(')')) {
-        // Chord: all notes at the same time (same beat)
-        const chordContent = token.slice(1, -1);
-        // Support both "(2 4)" spaced and "(24)" compact formats
-        let chordNotes: string[];
-        if (chordContent.includes(' ')) {
-          // Spaced format: "(2 4)" or "(3° 1°)"
-          chordNotes = chordContent.split(/\s+/).filter(Boolean);
+    // We also need to handle chords "(1 3)" or "(13)".
+    // We should pre-process the line to treat (...) as single tokens.
+    // Replace spaces inside () with a temporary placeholder?
+    // Or iterate manually.
+
+    const tokens: string[] = [];
+    let buffer = '';
+    let inChord = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '(') {
+        inChord = true;
+        buffer += char;
+      } else if (char === ')') {
+        inChord = false;
+        buffer += char;
+        tokens.push(buffer); // End of chord token
+        buffer = '';
+      } else if (char === ' ') {
+        if (inChord) {
+          buffer += char; // Keep space inside chord
         } else {
-          // Compact format: "(24)" or "(24°)" - split into individual notes
-          chordNotes = [];
-          let i = 0;
-          while (i < chordContent.length) {
-            if (/[1-7]/.test(chordContent[i])) {
-              let note = chordContent[i];
-              i++;
-              // Collect octave markers (*, °, ') that follow
-              while (i < chordContent.length && /[°*']/.test(chordContent[i])) {
-                note += chordContent[i];
-                i++;
-              }
-              chordNotes.push(note);
-            } else {
-              i++;
-            }
+          if (buffer.length > 0) {
+            tokens.push(buffer);
+            buffer = '';
           }
+          // Push a dedicated space token for EVERY space found
+          // This allows "A B" to have a 0.5s gap (A=0.25, space=0.25)
+          // and "A  B" to have a 0.75s gap, etc.
+          tokens.push(' ');
         }
-
-        for (const noteStr of chordNotes) {
-          const keyIndex = parseNoteToken(noteStr);
-          if (keyIndex !== null && keyIndex >= 0) {
-            notes.push({
-              id: generateId(),
-              keyIndex,
-              time: currentTime, // All notes at same time
-              duration: beatsToSeconds(beatDuration, bpm),
-            });
-          }
-        }
-        // Advance one beat after chord
-        currentTime += beatsToSeconds(beatDuration, bpm);
       } else {
-        // Sequential notes: check if token has multiple numbers (like "467")
-        const multiNumberMatch = token.match(/^([1-7][°*']*)+$/);
+        buffer += char;
+      }
+    }
+    if (buffer.length > 0) tokens.push(buffer);
 
-        if (multiNumberMatch && token.length > 1) {
-          // Token like "467" or "4673°2" - split into individual notes
-          // Each note goes to its own beat (consecutive beats)
-          const noteTokens: string[] = [];
-          let i = 0;
-          while (i < token.length) {
-            if (/[1-7]/.test(token[i])) {
-              let note = token[i];
-              i++;
-              // Collect octave markers
-              while (i < token.length && /[°*']/.test(token[i])) {
-                note += token[i];
-                i++;
-              }
-              noteTokens.push(note);
-            } else {
-              i++;
-            }
-          }
+    // Process Tokens
+    for (const token of tokens) {
+      if (token === '') {
+        // Rest
+        currentTime += subBeatDuration;
+        continue;
+      }
 
-          // Each note gets its own beat (sequential)
-          for (const noteToken of noteTokens) {
-            const keyIndex = parseNoteToken(noteToken);
-            if (keyIndex !== null && keyIndex >= 0) {
-              notes.push({
-                id: generateId(),
-                keyIndex,
-                time: currentTime, // Each note in its own beat
-                duration: beatsToSeconds(beatDuration, bpm),
-              });
-              currentTime += beatsToSeconds(beatDuration, bpm);
-            }
-          }
-        } else {
-          // Single note token (from "4 6 7" format) - one beat
-          const keyIndex = parseNoteToken(token);
+      // Subdivide Logic
+      // If token is wrapped in (), it's a chord.
+      // If token is alphanumeric "467" (no parens), it's fast notes.
+      // Duration of the whole token is `subBeatDuration`.
 
-          if (keyIndex === -1) {
-            // Rest - just advance time
-            currentTime += beatsToSeconds(beatDuration, bpm);
-          } else if (keyIndex !== null && keyIndex >= 0) {
+      if (token.startsWith('(') && token.endsWith(')')) {
+        // CHORD
+        const content = token.slice(1, -1);
+        // Parse notes inside chord
+        // "1 3 5" or "135"
+        // We need to extract individual notes from chord string.
+        // Regex to find notes: digit + optional modifiers
+        const noteMatches = content.matchAll(/([0-9][°*'.]*)/g);
+        let hasNotes = false;
+        for (const match of noteMatches) {
+          const noteStr = match[0];
+          const idx = parseNoteToken(noteStr, notationMap, authorTineCount, authorTuning);
+          if (idx !== null && idx !== -1) {
             notes.push({
               id: generateId(),
-              keyIndex,
+              keyIndex: idx,
               time: currentTime,
-              duration: beatsToSeconds(beatDuration, bpm),
+              duration: subBeatDuration // Chords usually hold for the beat
             });
-            currentTime += beatsToSeconds(beatDuration, bpm);
+            hasNotes = true;
+          }
+        }
+        if (hasNotes || content.includes('-')) {
+          // A chord token advances time by 0.25 beat
+          currentTime += subBeatDuration / 4;
+        }
+      } else if (token === ' ') {
+        // Space token advances time by 0.25 beat
+        currentTime += subBeatDuration / 4;
+      } else {
+        // MELODY (Sequential Notes)
+        // Extract notes: "467" -> 4, 6, 7 in sequence.
+        // Each note takes 1 subBeatDuration.
+        // Regex: digit explicit (1-7) followed by optional modifiers (*, °, ', .)
+
+        const matcher = /([1-7][°*'.]*)/g;
+        let match;
+        let hasMelody = false;
+
+        while ((match = matcher.exec(token)) !== null) {
+          const noteStr = match[0];
+          const idx = parseNoteToken(noteStr, notationMap, authorTineCount, authorTuning);
+          if (idx !== null && idx !== -1) {
+            notes.push({
+              id: generateId(),
+              keyIndex: idx,
+              time: currentTime,
+              duration: subBeatDuration / 4 // 16th note duration
+            });
+            // Advance time by 0.25 beat for each dense note
+            currentTime += subBeatDuration / 4;
+            hasMelody = true;
+          }
+        }
+
+        // If the token had no valid notes but wasn't empty, check if it was a rest symbol like '-' or 'r'
+        if (!hasMelody) {
+          // Check for explicit rest like '-' or 'r'
+          if (/^[-r_]+$/i.test(token)) {
+            currentTime += subBeatDuration;
           }
         }
       }
@@ -290,7 +248,6 @@ export const parseSongNotation = (
   return notes;
 };
 
-// Create a Song object from notation
 export const createSongFromNotation = (
   notation: string,
   metadata: {
@@ -301,9 +258,19 @@ export const createSongFromNotation = (
     difficulty?: Difficulty;
     icon?: string;
     iconColor?: string;
+    authorTuning?: string;
+    authorScale?: string;
+    authorTineCount?: number;
   }
 ): Song => {
-  const notes = parseSongNotation(notation, { bpm: metadata.bpm, timeSignature: metadata.timeSignature });
+  const notes = parseSongNotation(notation, {
+    bpm: metadata.bpm,
+    timeSignature: metadata.timeSignature,
+    authorTuning: metadata.authorTuning,
+    authorScale: metadata.authorScale,
+    authorTineCount: metadata.authorTineCount
+  });
+
   const duration = notes.length > 0
     ? Math.max(...notes.map(n => n.time + (n.duration || 0))) + 2
     : 0;
@@ -320,166 +287,119 @@ export const createSongFromNotation = (
     notes,
     duration,
     notation,
+    authorTuning: metadata.authorTuning,
+    authorScale: metadata.authorScale,
+    authorTineCount: metadata.authorTineCount,
     createdAt: Date.now(),
   };
 };
 
-// Reverse mapping: keyIndex to notation string
-const KEY_INDEX_TO_NOTATION = new Map<number, string>();
-KEY_INDEX_TO_NOTATION.set(12, '1');   // C
-KEY_INDEX_TO_NOTATION.set(7, '2');    // D
-KEY_INDEX_TO_NOTATION.set(13, '3');   // E
-KEY_INDEX_TO_NOTATION.set(6, '4');    // F
-KEY_INDEX_TO_NOTATION.set(14, '5');   // G
-KEY_INDEX_TO_NOTATION.set(5, '6');    // A
-KEY_INDEX_TO_NOTATION.set(15, '7');   // B
-KEY_INDEX_TO_NOTATION.set(4, '1°');   // C°
-KEY_INDEX_TO_NOTATION.set(16, '2°');  // D°
-KEY_INDEX_TO_NOTATION.set(3, '3°');   // E°
-KEY_INDEX_TO_NOTATION.set(10, '4°');  // F° (center)
-KEY_INDEX_TO_NOTATION.set(9, '5°');   // G°
-KEY_INDEX_TO_NOTATION.set(11, '6°');  // A°
-KEY_INDEX_TO_NOTATION.set(1, '7°');   // B°
-KEY_INDEX_TO_NOTATION.set(19, '1°°'); // C°°
-KEY_INDEX_TO_NOTATION.set(0, '2°');   // D° (left outer)
-KEY_INDEX_TO_NOTATION.set(20, '3°°'); // E°°
-KEY_INDEX_TO_NOTATION.set(17, '4°');  // F°
-KEY_INDEX_TO_NOTATION.set(2, '5°');   // G°
-KEY_INDEX_TO_NOTATION.set(18, '6°');  // A°
-KEY_INDEX_TO_NOTATION.set(8, '7°');   // B
-
-// Convert notes array back to tab notation string
-// Follows kalimbatabs.net format: notes separated by spaces on same line, new lines based on time signature
-export const notesToNotation = (notes: SongNote[], bpm: number, timeSignature: TimeSignature = '4/4'): string => {
+export const notesToNotation = (
+  notes: SongNote[],
+  bpm: number,
+  timeSignature: TimeSignature = '4/4',
+  authorTuning: string = 'C',
+  authorScale: string = 'Major',
+  authorTineCount: number = 17
+): string => {
   if (notes.length === 0) return '';
-
   const beatDuration = 60 / bpm;
-  // Use sub-beat grid based on time signature denominator (matching ChartEditor)
-  const gridDivision = parseInt(timeSignature.split('/')[1]);
-  const subBeatDuration = beatDuration / gridDivision;
+  const subBeatDuration = beatDuration; // 1 beat (Space = 1 beat)
+  const kalimbaKeys = generateKalimbaLayout(authorTineCount, authorTuning, authorScale);
 
-  // Sort by time, but preserve original order for notes at same time
-  const sortedNotes = [...notes].sort((a, b) => {
-    const timeDiff = a.time - b.time;
-    if (Math.abs(timeDiff) < 0.001) {
-      // Same time - preserve original order by using chordGroup or index
-      return (a.chordGroup || 0) - (b.chordGroup || 0);
-    }
-    return timeDiff;
-  });
-
-  // Group notes by sub-beat (matching ChartEditor grid)
-  // Notes at the same sub-beat (within a small threshold) are chords
-  const beatThreshold = subBeatDuration * 0.1; // 10% of a sub-beat
+  // Group notes by time
+  const sortedNotes = [...notes].sort((a, b) => a.time - b.time);
   const grouped: { time: number; notes: SongNote[] }[] = [];
 
   sortedNotes.forEach(note => {
     const lastGroup = grouped[grouped.length - 1];
-    // Group notes that are in the same sub-beat (chords)
-    if (lastGroup && Math.abs(note.time - lastGroup.time) < beatThreshold) {
-      // Add to existing sub-beat group (chord)
+    if (lastGroup && Math.abs(note.time - lastGroup.time) < 0.05) { // Tolerance
       lastGroup.notes.push(note);
     } else {
-      // New sub-beat (sequential note or new chord starting)
       grouped.push({ time: note.time, notes: [note] });
     }
   });
 
-  // Convert to notation - each sub-beat = one notation element
-  // Group into lines based on time signature (measures)
+  let notation = '';
+  let lastTimeEnd = 0;
+  let currentBlock = ''; // Accumulates fast notes (e.g. "467")
+  let currentChain = 0;  // Count notes in current block to prevent "walls of text"
+  let currentMeasure = 0;
   const beatsPerMeasure = parseInt(timeSignature.split('/')[0]);
   const measureDuration = beatsPerMeasure * beatDuration;
 
-  const lines: string[] = [];
-  let currentLine: string[] = [];
-  let currentNoteGroup: string[] = []; // Group consecutive single notes
-  let lastBeatIndex = -1;
-  let lastMeasureNumber = -1;
-
   grouped.forEach((group) => {
-    const { time, notes: groupNotes } = group;
+    // 1. Calculate Gap
+    const startTimeResult = group.time;
+    let gap = startTimeResult - lastTimeEnd;
+    if (gap < 0) gap = 0;
 
-    // Calculate which sub-beat this is (0, 1, 2, ...) using sub-beat grid
-    const beatIndex = Math.round(time / subBeatDuration);
-    const measureNumber = Math.floor(time / measureDuration);
+    // 2. Check Hierarchy: Newline > Space > Glue
+    const measureIndex = Math.floor(group.time / measureDuration);
+    let forceNewline = measureIndex > currentMeasure || gap >= (subBeatDuration * 2.0);
+    let forceSpace = gap >= (subBeatDuration * 0.5);
+    let canGlue = gap < (subBeatDuration * 0.25) && currentChain < 8;
 
-    // Start new line for new measure
-    if (measureNumber !== lastMeasureNumber && lastMeasureNumber >= 0 && currentLine.length > 0) {
-      // Close any pending note group
-      if (currentNoteGroup.length > 0) {
-        currentLine.push(currentNoteGroup.join(''));
-        currentNoteGroup = [];
+    // 3. Apply Structure
+    if (forceNewline) {
+      if (currentBlock) notation += currentBlock;
+      notation += '\n'; // Double newline or single? User says "Un Salto de Línea"
+      currentBlock = '';
+      currentChain = 0;
+      currentMeasure = measureIndex;
+    } else if (forceSpace || !canGlue) {
+      // Standard spacing
+      if (currentBlock) {
+        notation += currentBlock;
+        currentBlock = '';
+        currentChain = 0;
       }
-      lines.push(currentLine.join(' '));
-      currentLine = [];
-    }
 
-    // Check if this is a consecutive beat (for grouping single notes)
-    const isConsecutiveBeat = lastBeatIndex >= 0 && beatIndex === lastBeatIndex + 1;
-    const isChord = groupNotes.length > 1;
+      // Add spaces based on gap resolution (0.25 units)
+      const resolution = subBeatDuration / 4;
+      const unitsSkipped = Math.round(gap / resolution);
 
-    // Convert notes in this beat to notation
-    if (isChord) {
-      // Close current note group if exists, add chord
-      if (currentNoteGroup.length > 0) {
-        currentLine.push(currentNoteGroup.join(''));
-        currentNoteGroup = [];
-      }
-      // Chord: multiple notes at same beat (in parentheses)
-      const sortedChordNotes = [...groupNotes].sort((a, b) => a.keyIndex - b.keyIndex);
-      const chordNotes = sortedChordNotes
-        .map(n => KEY_INDEX_TO_NOTATION.get(n.keyIndex))
-        .filter(Boolean);
-      if (chordNotes.length > 0) {
-        currentLine.push(`(${chordNotes.join(' ')})`);
-      }
-    } else if (groupNotes.length === 1) {
-      // Single note - always separate with spaces (no compact grouping)
-      const noteNotation = KEY_INDEX_TO_NOTATION.get(groupNotes[0].keyIndex);
-      if (noteNotation) {
-        // Close previous group if exists
-        if (currentNoteGroup.length > 0) {
-          currentLine.push(currentNoteGroup.join(''));
-          currentNoteGroup = [];
+      if (notation.length > 0 && !notation.endsWith('\n')) {
+        // Add at least one space if not gluing, up to unitsSkipped
+        for (let i = 0; i < Math.max(1, unitsSkipped); i++) {
+          notation += ' ';
         }
-        // Add as individual note (with space separation)
-        currentLine.push(noteNotation);
       }
     }
 
-    lastBeatIndex = beatIndex;
-    lastMeasureNumber = measureNumber;
+    // 4. Generate Token for current group
+    let token = '';
+    if (group.notes.length > 1) {
+      const chord = group.notes.map(n => {
+        const key = kalimbaKeys.find(k => k.index === n.keyIndex);
+        return key ? key.displayDegree : '?';
+      }).filter(Boolean);
+      token = `(${chord.join(' ')})`;
+    } else {
+      const key = kalimbaKeys.find(k => k.index === group.notes[0].keyIndex);
+      token = key ? key.displayDegree : '?';
+    }
+
+    currentBlock += token;
+    currentChain++;
+
+    // Advance lastTimeEnd
+    // A token takes 0.25 by convention in our resolution
+    lastTimeEnd = group.time + (subBeatDuration / 4);
   });
 
-  // Close any remaining note group
-  if (currentNoteGroup.length > 0) {
-    currentLine.push(currentNoteGroup.join(''));
-  }
+  if (currentBlock) notation += currentBlock;
 
-  // Add remaining line
-  if (currentLine.length > 0) {
-    lines.push(currentLine.join(' '));
-  }
-
-  // Return with line breaks (like kalimbatabs.net format)
-  return lines.join('\n');
+  // Cleanup cleanup: trim and normalize
+  return notation.trim().replace(/[ \t]+\n/g, '\n').replace(/\n\n+/g, '\n\n');
 };
 
-// Export song to JSON
-export const exportSongToJSON = (song: Song): string => {
-  return JSON.stringify(song, null, 2);
-};
+export const exportSongToJSON = (song: Song): string => JSON.stringify(song, null, 2);
 
-// Import song from JSON
 export const importSongFromJSON = (json: string): Song | null => {
   try {
     const parsed = JSON.parse(json);
-    if (!parsed.id || !parsed.title || !parsed.bpm || !Array.isArray(parsed.notes)) {
-      throw new Error('Invalid song format');
-    }
+    if (!parsed.id || !parsed.title || !parsed.bpm || !Array.isArray(parsed.notes)) return null;
     return parsed as Song;
-  } catch (error) {
-    console.error('Failed to parse song JSON:', error);
-    return null;
-  }
+  } catch { return null; }
 };

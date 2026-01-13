@@ -1,17 +1,19 @@
 // ============================================
 // Kalimba Hero - 3D Kalimba Component
 // ============================================
-import { useRef, useState } from "react"
+import { useRef, useState, useMemo } from "react"
 import { useFrame } from "@react-three/fiber"
 import { Html } from "@react-three/drei"
 import * as THREE from "three"
 import {
-  KALIMBA_KEYS,
+  getKalimbaConfig,
   getKeyColor,
   getKeyDisplayLabel,
   getLaneXPosition,
 } from "@/utils/frequencyMap"
-import type { DetectedPitch } from "@/types/game"
+import { HARDWARE_PRESETS } from "@/utils/hardwarePresets"
+import { useGameStore } from "@/stores/gameStore"
+import type { DetectedPitch, KalimbaKey } from "@/types/game"
 
 interface Kalimba3DProps {
   activeKeyIndices?: number[]
@@ -23,22 +25,26 @@ interface Kalimba3DProps {
 }
 
 // Calculate tine length - center (index 10) is LONGEST, decreases towards edges
-const getTineLength = (keyIndex: number): number => {
-  const center = 10
+// Calculate tine length - center is LONGEST, decreases towards edges
+const getTineLength = (keyIndex: number, totalTines: number): number => {
+  const center = Math.floor(totalTines / 2)
   const distanceFromCenter = Math.abs(keyIndex - center)
   const maxLength = 6.0
-  const minLength = 1.5
-  return maxLength - (distanceFromCenter * (maxLength - minLength)) / center
+  const minLength = 2.0
+  // Scale based on distance from center relative to total tines
+  return maxLength - (distanceFromCenter * (maxLength - minLength)) / Math.max(center, 1)
 }
 
 // Individual tine component
 const Tine = ({
-  keyIndex,
+  tineKey,
+  totalTines,
   isActive,
   showLabel = true,
   onClick,
 }: {
-  keyIndex: number
+  tineKey: KalimbaKey
+  totalTines: number
   isActive: boolean
   showLabel?: boolean
   onClick?: () => void
@@ -47,11 +53,11 @@ const Tine = ({
   const groupRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState(false)
 
-  const length = getTineLength(keyIndex)
-  const baseColor = getKeyColor(keyIndex)
-  const label = getKeyDisplayLabel(keyIndex)
-  const xPosition = getLaneXPosition(keyIndex, 0.75, 0.15)
-  const isCenterKey = keyIndex === 10
+  const length = getTineLength(tineKey.index, totalTines)
+  const baseColor = getKeyColor(tineKey.index, totalTines)
+  const label = getKeyDisplayLabel(tineKey)
+  const xPosition = getLaneXPosition(tineKey.index, totalTines, 0.75, 0.15)
+  const isCenterKey = tineKey.index === Math.floor(totalTines / 2)
 
   // Animation logic
   useFrame((state) => {
@@ -144,12 +150,15 @@ const Tine = ({
   )
 }
 
-const KalimbaBody = () => {
+const KalimbaBody = ({ tinesCount }: { tinesCount: number }) => {
+  // Scale body width based on tines
+  const bodyWidth = Math.max(10, tinesCount * 0.9)
+
   return (
     <group position={[0, -0.4, 3.5]}>
       {/* Wooden Body */}
       <mesh receiveShadow castShadow>
-        <boxGeometry args={[18, 1, 9]} />
+        <boxGeometry args={[bodyWidth, 1, 9]} />
         <meshStandardMaterial
           color="#3d2b1f"
           roughness={0.6}
@@ -165,13 +174,13 @@ const KalimbaBody = () => {
 
       {/* Top Bridge Bar (Metal) */}
       <mesh position={[0, 0.55, -3.5]}>
-        <boxGeometry args={[17.5, 0.15, 0.1]} />
+        <boxGeometry args={[bodyWidth - 0.5, 0.15, 0.1]} />
         <meshStandardMaterial color="#888" metalness={0.8} />
       </mesh>
 
       {/* Pressure Bar (The one that holds the tines down) */}
       <mesh position={[0, 0.7, -2.5]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.1, 0.1, 17.5, 12]} />
+        <cylinderGeometry args={[0.1, 0.1, bodyWidth - 0.5, 12]} />
         <meshStandardMaterial color="#666" metalness={1} />
       </mesh>
     </group>
@@ -186,18 +195,26 @@ export const Kalimba3D = ({
   onTineClick,
 }: Kalimba3DProps) => {
   const groupRef = useRef<THREE.Group>(null)
+  const { settings } = useGameStore()
+
+  // Calculate keys dynamically based on settings
+  const kalimbaKeys = useMemo(() => {
+    const preset = HARDWARE_PRESETS[settings.hardwarePresetId] || HARDWARE_PRESETS['17']
+    return getKalimbaConfig(preset.tinesCount, settings.userTuning)
+  }, [settings.hardwarePresetId, settings.userTuning])
 
   // Ensure activeKeyIndices is always an array (defensive)
   const safeActiveKeys = Array.isArray(activeKeyIndices) ? activeKeyIndices : []
 
   return (
     <group ref={groupRef} position={position} rotation={rotation}>
-      <KalimbaBody />
-      {/* All 21 tines */}
-      {KALIMBA_KEYS.map((_, index) => (
+      <KalimbaBody tinesCount={kalimbaKeys.length} />
+      {/* All tines based on current config */}
+      {kalimbaKeys.map((k, index) => (
         <Tine
-          key={`tine-${index}`}
-          keyIndex={index}
+          key={`tine-${k.index}`}
+          tineKey={k}
+          totalTines={kalimbaKeys.length}
           isActive={safeActiveKeys.includes(index)}
           showLabel={showNumbers}
           onClick={() => onTineClick?.(index)}

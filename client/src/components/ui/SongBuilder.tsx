@@ -2,12 +2,13 @@
 // Kalimba Hero - Song Builder Component
 // ============================================
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText, Wand2, Cloud, Globe } from 'lucide-react';
+import { ArrowLeft, Play, Save, Upload, Download, RefreshCw, Edit3, Grid, FileText, Wand2, Cloud, Globe, Zap } from 'lucide-react';
 import { AuroraBackground } from '@/components/ui/AuroraBackground';
 import { AutoTranscribeModal } from './AutoTranscribeModal';
 import { cn } from '@/lib/utils';
+import type { SongNote } from '@/types/game';
 import { Input } from './input';
 import { useUIStore } from '@/stores/uiStore';
 import {
@@ -24,8 +25,8 @@ import {
   importSongFromJSON,
   notesToNotation,
 } from '@/utils/songParser';
-import type { Song, SongNote, Difficulty, TimeSignature } from '@/types/game';
-
+import { SCALES } from '@/utils/frequencyMap';
+import type { Song, Difficulty, TimeSignature } from '@/types/game';
 interface SongBuilderProps {
   onBack: () => void;
   onTestPlay: (song: Song) => void;
@@ -91,9 +92,13 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
   const [syncToCloud, setSyncToCloud] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState(initialSong?.youtubeUrl || '');
   const [category, setCategory] = useState(initialSong?.category || '');
+  const [authorTuning, setAuthorTuning] = useState(initialSong?.authorTuning || 'C');
+  const [authorScale, setAuthorScale] = useState(initialSong?.authorScale || 'Major');
+  const [authorTineCount, setAuthorTineCount] = useState(initialSong?.authorTineCount || 17);
   const [jsonOutput, setJsonOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(true);
+  const [gridResolution, setGridResolution] = useState(16); // 1/16, 1/32, etc
 
   const { openAuth } = useUIStore();
 
@@ -118,6 +123,9 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       setSyncToCloud(initialSong.isCloud || false);
       setYoutubeUrl(initialSong.youtubeUrl || '');
       setCategory(initialSong.category || '');
+      setAuthorTuning(initialSong.authorTuning || 'C');
+      setAuthorScale(initialSong.authorScale || 'Major');
+      setAuthorTineCount(initialSong.authorTineCount || 17);
       setError(null);
       setJsonOutput('');
       setIsLoaded(true);
@@ -153,13 +161,16 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       difficulty,
       icon,
       iconColor,
-      notation: editorMode === 'text' ? notation : notesToNotation(notes, bpm, timeSignature),
+      notation: editorMode === 'text' ? notation : notesToNotation(notes, bpm, timeSignature, authorTuning, authorScale, authorTineCount),
       notes,
       duration: editorMode === 'chart' ? Math.max(duration, ...notes.map(n => n.time + (n.duration || 0))) : duration,
       youtubeUrl,
       category,
+      authorTuning,
+      authorScale,
+      authorTineCount,
     };
-  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, youtubeUrl, category]);
+  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, youtubeUrl, category, authorTuning, authorScale, authorTineCount]);
 
   // Auto-trigger onChange when state changes
   useEffect(() => {
@@ -167,44 +178,82 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       const state = getCurrentSongState();
       onChange(state);
     }
-  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, isLoaded, onChange, getCurrentSongState, youtubeUrl]);
+  }, [songId, title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, isLoaded, onChange, getCurrentSongState, youtubeUrl, authorTuning, authorTineCount]);
 
-  // Sync notes from notation when switching to chart mode
-  const handleModeChange = useCallback((mode: EditorMode) => {
-    // Always allow mode change, but sync data if available
-    if (mode === 'chart') {
-      // When switching to chart mode, try to sync from notation if available
-      if (notation.trim()) {
-        try {
-          const song = createSongFromNotation(notation, {
-            title: title.trim() || 'Untitled',
-            artist: artist.trim() || 'Unknown',
-            bpm,
-            timeSignature,
-            difficulty,
-            icon,
-            iconColor,
-          });
-          setNotes(song.notes);
-          setDuration(song.duration);
-          setError(null);
-        } catch (err) {
-          // Keep existing notes if parsing fails - don't prevent mode change
-          console.error('Failed to parse notation:', err);
-        }
-      }
-      // Always change mode, even if no notation
-      setEditorMode(mode);
-    } else if (mode === 'text') {
-      // When switching to text mode, always convert notes to notation (even if empty)
-      const newNotation = notes.length > 0
-        ? notesToNotation(notes, bpm, timeSignature)
-        : '';
-      setNotation(newNotation);
-      // Always change mode
-      setEditorMode(mode);
+  // Track if chart has been modified manually
+  const [isDirty, setIsDirty] = useState(false);
+  const notationRef = useRef<HTMLTextAreaElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [isSyncingScroll, setIsSyncingScroll] = useState(false);
+
+  const handleNotationScroll = () => {
+    if (isSyncingScroll || !notationRef.current || !chartRef.current) return;
+    setIsSyncingScroll(true);
+    const notationEl = notationRef.current;
+    const chartEl = chartRef.current;
+
+    const percentage = notationEl.scrollTop / (notationEl.scrollHeight - notationEl.clientHeight);
+    chartEl.scrollTop = percentage * (chartEl.scrollHeight - chartEl.clientHeight);
+
+    // Tiny delay to avoid feedback loops
+    setTimeout(() => setIsSyncingScroll(false), 50);
+  };
+
+  const handleChartScroll = () => {
+    if (isSyncingScroll || !notationRef.current || !chartRef.current) return;
+    setIsSyncingScroll(true);
+    const notationEl = notationRef.current;
+    const chartEl = chartRef.current;
+
+    const percentage = chartEl.scrollTop / (chartEl.scrollHeight - chartEl.clientHeight);
+    notationEl.scrollTop = percentage * (notationEl.scrollHeight - notationEl.clientHeight);
+
+    setTimeout(() => setIsSyncingScroll(false), 50);
+  };
+
+
+  // Wrap setNotes to track dirty state
+  const handleNotesChange = useCallback((newNotes: SongNote[]) => {
+    setNotes(newNotes);
+    setIsDirty(true);
+  }, []);
+
+  // Manual Sync: Notation -> Grid (Chart)
+  const handleSyncToGrid = useCallback(() => {
+    if (!notation.trim()) return;
+    try {
+      const song = createSongFromNotation(notation, {
+        title: title.trim() || 'Untitled',
+        artist: artist.trim() || 'Unknown',
+        bpm,
+        timeSignature,
+        difficulty,
+        icon,
+        iconColor,
+        authorTuning,
+        authorScale,
+        authorTineCount,
+      });
+      setNotes(song.notes);
+      setDuration(song.duration);
+      setError(null);
+      setIsDirty(false); // Grid is now synced with Text
+      // setBackupNotation(notation);
+    } catch (err) {
+      setError('Failed to parse notation');
+      console.error(err);
     }
-  }, [notation, notes, title, artist, bpm, timeSignature, difficulty, icon, iconColor]);
+  }, [notation, title, artist, bpm, timeSignature, difficulty, icon, iconColor, authorTuning, authorScale, authorTineCount]);
+
+  // Manual Sync: Grid (Chart) -> Notation (Text)
+  const handleSyncToText = useCallback(() => {
+    const newNotation = notes.length > 0
+      ? notesToNotation(notes, bpm, timeSignature, authorTuning, authorScale, authorTineCount)
+      : '';
+    setNotation(newNotation);
+    setIsDirty(false); // Text is now synced with Grid
+    // setBackupNotation(newNotation);
+  }, [notes, bpm, timeSignature, authorTuning, authorScale, authorTineCount]);
 
   // Generate song from current inputs
   const generateSong = useCallback((): Song | null => {
@@ -233,6 +282,9 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
           difficulty,
           icon,
           iconColor,
+          authorTuning,
+          authorScale,
+          authorTineCount,
         });
         return song;
       } catch (err) {
@@ -248,7 +300,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
 
       songNotes = notes;
       songDuration = Math.max(duration, ...notes.map(n => n.time + (n.duration || 0))) + 2;
-      songNotation = notesToNotation(notes, bpm, timeSignature);
+      songNotation = notesToNotation(notes, bpm, timeSignature, authorTuning, authorScale, authorTineCount);
     }
 
     const song: Song = {
@@ -268,11 +320,13 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
       cloudId: initialSong?.cloudId,
       youtubeUrl,
       category,
+      authorTuning,
+      authorTineCount,
     };
 
     setError(null);
     return song;
-  }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong, syncToCloud, isPublic, youtubeUrl]);
+  }, [title, artist, bpm, timeSignature, difficulty, icon, iconColor, notation, notes, duration, editorMode, initialSong, syncToCloud, isPublic, youtubeUrl, authorTuning, authorTineCount]);
 
   // Handle test play
   const handleTestPlay = () => {
@@ -316,6 +370,9 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         setDuration(song.duration || 30);
         setYoutubeUrl(song.youtubeUrl || '');
         setCategory(song.category || 'Pop');
+        setAuthorTuning(song.authorTuning || 'C');
+        setAuthorScale(song.authorScale || 'Major');
+        setAuthorTineCount(song.authorTineCount || 17);
         setError(null);
       } else {
         setError('Invalid JSON format');
@@ -332,15 +389,26 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
 
   const [showTranscribeModal, setShowTranscribeModal] = useState(false);
 
-  const handleTranscribeComplete = (newNotes: SongNote[], newBpm: number) => {
-    setNotes(newNotes); // Replace notes or Append? Ideally Replace for a fresh transcribe.
+  const handleTranscribeComplete = (newNotes: SongNote[], newBpm: number, mode: 'overwrite' | 'merge') => {
+    if (mode === 'overwrite') {
+      setNotes(newNotes);
+    } else {
+      setNotes(prev => {
+        // Simple merge: append and sort
+        const combined = [...prev, ...newNotes];
+        return combined.sort((a, b) => a.time - b.time);
+      });
+    }
+
     setBpm(newBpm);
 
     // Recalculate duration
-    if (newNotes.length > 0) {
-      const lastNote = newNotes[newNotes.length - 1];
+    const allNotes = mode === 'overwrite' ? newNotes : [...notes, ...newNotes];
+    if (allNotes.length > 0) {
+      const lastNote = allNotes.reduce((max, n) => (n.time + (n.duration || 1) > max.time + (max.duration || 1) ? n : max), allNotes[0]);
       setDuration(Math.ceil(lastNote.time + (lastNote.duration || 1)) + 4);
     }
+    setIsDirty(true);
   };
 
   return (
@@ -362,6 +430,12 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         isOpen={showTranscribeModal}
         onClose={() => setShowTranscribeModal(false)}
         onTranscribeComplete={handleTranscribeComplete}
+        gridStep={1 / (gridResolution / 4)} // Convert e.g. 16 to 0.25 beats (in 4/4)
+        config={{
+          tinesCount: authorTineCount,
+          tuning: authorTuning,
+          scale: authorScale
+        }}
       />
 
       {/* Header */}
@@ -375,32 +449,58 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
             <span className="skew-x-[12deg] text-xs font-black uppercase tracking-widest">Back</span>
           </button>
 
-          <h1 className="text-2xl font-black italic uppercase tracking-tighter text-white drop-shadow-md">
+          <h1 className="text-2xl font-black italic uppercase tracking-tighter text-white drop-shadow-md hidden md:block">
             Chart Builder
           </h1>
         </div>
 
-        {/* Editor Mode Toggle */}
-        <div className="flex bg-black/40 p-1 rounded-none skew-x-[-12deg] border border-white/5">
+        {/* Sync Controls (Desktop + Mobile) */}
+        <div className="flex items-center gap-2">
+
+          {/* Mobile Tab Toggle */}
+          <div className="flex md:hidden bg-black/40 p-1 rounded-none skew-x-[-12deg] border border-white/5 mr-2">
+            <button
+              onClick={() => setEditorMode('chart')}
+              className={cn(
+                "p-2 rounded-none transition-all cursor-pointer",
+                editorMode === 'chart' ? "bg-cyan-600 text-white" : "text-white/40"
+              )}
+            >
+              <Grid className="w-4 h-4 skew-x-[12deg]" />
+            </button>
+            <button
+              onClick={() => setEditorMode('text')}
+              className={cn(
+                "p-2 rounded-none transition-all cursor-pointer",
+                editorMode === 'text' ? "bg-purple-600 text-white" : "text-white/40"
+              )}
+            >
+              <FileText className="w-4 h-4 skew-x-[12deg]" />
+            </button>
+          </div>
+
+          {/* Manual Sync Buttons */}
           <button
-            onClick={() => handleModeChange('chart')}
-            className={cn(
-              "flex items-center gap-2 px-6 py-2 rounded-none text-xs font-black italic uppercase tracking-widest transition-all cursor-pointer",
-              editorMode === 'chart' ? "bg-cyan-600 text-white shadow-lg" : "text-white/40 hover:text-white"
-            )}
+            onClick={handleSyncToGrid}
+            className="group flex items-center gap-2 px-3 py-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 rounded-none skew-x-[-12deg] border border-purple-500/20 hover:border-purple-500/40 transition-all cursor-pointer"
+            title="Overwrite Chart with Notation"
           >
-            <Grid className="w-3 h-3 skew-x-[12deg]" />
-            <span className="skew-x-[12deg]">Visual Editor</span>
+            <span className="skew-x-[12deg] text-[10px] font-black uppercase tracking-widest hidden lg:inline">Sync to Grid</span>
+            <span className="skew-x-[12deg] lg:hidden">To Grid</span>
+            <Zap className="w-3 h-3 skew-x-[12deg]" />
           </button>
+
           <button
-            onClick={() => handleModeChange('text')}
-            className={cn(
-              "flex items-center gap-2 px-6 py-2 rounded-none text-xs font-black italic uppercase tracking-widest transition-all cursor-pointer",
-              editorMode === 'text' ? "bg-purple-600 text-white shadow-lg" : "text-white/40 hover:text-white"
-            )}
+            onClick={handleSyncToText}
+            className="group relative flex items-center gap-2 px-3 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 rounded-none skew-x-[-12deg] border border-cyan-500/20 hover:border-cyan-500/40 transition-all cursor-pointer"
+            title="Overwrite Notation with Chart"
           >
+            {isDirty && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_5px_red] animate-pulse z-10" />
+            )}
+            <span className="skew-x-[12deg] text-[10px] font-black uppercase tracking-widest hidden lg:inline">Sync to Text</span>
+            <span className="skew-x-[12deg] lg:hidden">To Text</span>
             <FileText className="w-3 h-3 skew-x-[12deg]" />
-            <span className="skew-x-[12deg]">Notation</span>
           </button>
         </div>
 
@@ -408,7 +508,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowTranscribeModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 hover:text-pink-300 rounded-none skew-x-[-12deg] border border-pink-500/20 hover:border-pink-500/40 transition-all cursor-pointer"
+            className="hidden md:flex items-center gap-2 px-4 py-2 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 hover:text-pink-300 rounded-none skew-x-[-12deg] border border-pink-500/20 hover:border-pink-500/40 transition-all cursor-pointer"
             title="Auto-Transcribe from Audio"
           >
             <Wand2 className="w-4 h-4 skew-x-[12deg]" />
@@ -432,7 +532,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
             className="flex items-center gap-2 px-5 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-none skew-x-[-12deg] transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:shadow-[0_0_25px_rgba(6,182,212,0.6)] cursor-pointer"
           >
             <Play className="w-4 h-4 skew-x-[12deg] fill-white" />
-            <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-widest">Test</span>
+            <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-widest hidden md:inline">Test</span>
           </button>
 
           <button
@@ -440,7 +540,7 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
             className="flex items-center gap-2 px-5 py-2 bg-green-500 hover:bg-green-400 text-white rounded-none skew-x-[-12deg] transition-all shadow-[0_0_15px_rgba(34,197,94,0.4)] hover:shadow-[0_0_25px_rgba(34,197,94,0.6)] cursor-pointer"
           >
             <Save className="w-4 h-4 skew-x-[12deg]" />
-            <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-widest">Save</span>
+            <span className="skew-x-[12deg] text-xs font-black italic uppercase tracking-widest hidden md:inline">Save</span>
           </button>
         </div>
       </div>
@@ -454,23 +554,21 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: 340, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              className="relative z-10 flex-shrink-0 border-r border-white/5 overflow-y-auto bg-black/40 backdrop-blur-md"
+              className="relative z-10 flex-shrink-0 border-r border-white/5 overflow-y-auto bg-black/40 backdrop-blur-md hidden xl:block"
             >
+              {/* Settings Content (Existing) */}
               <div className="p-6 space-y-6">
                 <h2 className="text-xl font-black italic uppercase tracking-tighter text-white/80 border-b border-white/5 pb-4">Song Settings</h2>
-
-                {/* Title */}
+                {/* Inputs ... (Truncated for brevity, assuming we keep existing structure or need to re-render it)
+                    Actually, I'm replacing the whole block, I need to include the settings UI or it will be lost.
+                    Since I don't want to copy-paste 300 lines of settings again if I can avoid it.
+                    Can I use replace on just header? No, 'Main content' wrapper changed.
+                    I will include the settings markup.
+                */}
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Title</label>
-                  <Input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="MY AWESOME SONG"
-                    className="w-full bg-white/5 border-white/10 text-white placeholder-white/20 focus:border-cyan-500/50 rounded-none skew-x-[-12deg] text-xs font-bold uppercase tracking-wider h-10 px-4"
-                  />
+                  <Input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="MY AWESOME SONG" className="w-full bg-white/5 border-white/10 text-white placeholder-white/20 focus:border-cyan-500/50 rounded-none skew-x-[-12deg] text-xs font-bold uppercase tracking-wider h-10 px-4" />
                 </div>
-
                 {/* Artist */}
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Artist</label>
@@ -501,6 +599,86 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
                   </Select>
                   <p className="text-[10px] text-white/30 mt-2 italic px-2">
                     Determines grid divisions ({timeSignature.split('/')[0]} beats per measure)
+                  </p>
+                </div>
+
+                {/* Grid Resolution */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Editor Grid</label>
+                  <Select
+                    value={gridResolution.toString()}
+                    onValueChange={(value) => setGridResolution(parseInt(value))}
+                  >
+                    <SelectTrigger className="w-full bg-white/5 border-white/10 text-white focus:border-cyan-500/50 rounded-none skew-x-[-12deg] h-10 px-4">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#111] border-white/10 rounded-sm">
+                      <SelectItem value="8" className="text-white focus:bg-white/10 cursor-pointer">1/8 (Swing)</SelectItem>
+                      <SelectItem value="16" className="text-white focus:bg-white/10 cursor-pointer">1/16 (Standard)</SelectItem>
+                      <SelectItem value="32" className="text-white focus:bg-white/10 cursor-pointer">1/32 (Complex)</SelectItem>
+                      <SelectItem value="64" className="text-white focus:bg-white/10 cursor-pointer">1/64 (Ultra-fine)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-white/30 mt-2 italic px-2">
+                    Quantization for transcription and manual editing
+                  </p>
+                </div>
+
+                {/* Kalimba Configuration */}
+                <div className="pt-4 border-t border-white/10 space-y-4">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-cyan-400/80">Author Calibration</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Tuning</label>
+                      <Select
+                        value={authorTuning}
+                        onValueChange={setAuthorTuning}
+                      >
+                        <SelectTrigger className="w-full bg-white/5 border-white/10 text-white focus:border-cyan-500/50 rounded-none skew-x-[-12deg] h-10 px-4">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#111] border-white/10">
+                          {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(n => (
+                            <SelectItem key={n} value={n} className="text-white focus:bg-white/10 cursor-pointer">{n}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Scale</label>
+                      <Select
+                        value={authorScale}
+                        onValueChange={setAuthorScale}
+                      >
+                        <SelectTrigger className="w-full bg-white/5 border-white/10 text-white focus:border-cyan-500/50 rounded-none skew-x-[-12deg] h-10 px-4">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#111] border-white/10">
+                          {Object.keys(SCALES).map(s => (
+                            <SelectItem key={s} value={s} className="text-white focus:bg-white/10 cursor-pointer">{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Tines</label>
+                      <Select
+                        value={authorTineCount.toString()}
+                        onValueChange={(v) => setAuthorTineCount(parseInt(v))}
+                      >
+                        <SelectTrigger className="w-full bg-white/5 border-white/10 text-white focus:border-cyan-500/50 rounded-none skew-x-[-12deg] h-10 px-4">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#111] border-white/10">
+                          {[8, 9, 10, 13, 17, 21, 34].map(t => (
+                            <SelectItem key={t} value={t.toString()} className="text-white focus:bg-white/10 cursor-pointer">{t} Tines</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-white/30 italic px-2">
+                    Specify the kalimba type you are composing for.
                   </p>
                 </div>
 
@@ -672,54 +850,58 @@ export const SongBuilder: React.FC<SongBuilderProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Editor Split Area */}
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
 
-        {/* Editor area */}
-        <div className="flex-1 overflow-hidden">
-          {editorMode === 'chart' ? (
-            <ChartEditor
-              notes={notes}
-              bpm={bpm}
-              timeSignature={timeSignature}
-              duration={duration}
-              onNotesChange={setNotes}
-              onDurationChange={setDuration}
-              onBpmChange={setBpm}
-              onTimeSignatureChange={setTimeSignature}
-            />
-          ) : (
-            <div className="h-full flex flex-col p-8 relative z-10">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white">Tab Notation</h2>
-                <div className="px-4 py-2 bg-white/5 border border-white/10 skew-x-[-12deg]">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/60 skew-x-[12deg]">
-                    Use 1-7 for scale degrees • ° or * for octaves
-                  </p>
-                </div>
-              </div>
-
+          {/* Notation Panel (Left) */}
+          <div className={cn(
+            "flex-1 flex flex-col border-r border-white/5 transition-all text-left",
+            // Auto-hide on mobile if mode is chart
+            editorMode === 'chart' ? "hidden md:flex" : "flex"
+          )}>
+            <div className="p-4 bg-black/40 border-b border-white/5 flex justify-between items-center">
+              <h3 className="text-sm font-black italic uppercase tracking-widest text-white/50">Notation Editor</h3>
+            </div>
+            <div className="flex-1 relative bg-black/20">
               <textarea
+                ref={notationRef}
+                onScroll={handleNotationScroll}
                 value={notation}
                 onChange={(e) => setNotation(e.target.value)}
-                placeholder="1° 7 6 5 4&#10;5 6 1°&#10;135(461')&#10;7 6 5 4 3&#10;6 5 4 3 2&#10;..."
-                className="flex-1 px-8 py-6 bg-black/40 border border-white/10 text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50 transition-colors font-mono text-sm resize-none rounded-none shadow-inner"
+                className="absolute inset-0 w-full h-full bg-transparent text-white p-6 font-mono text-sm resize-none focus:outline-none focus:bg-white/5 leading-relaxed"
+                placeholder="Enter song notation here...&#10;1 3 5 (135)&#10;Use parentheses for chords."
+                spellCheck={false}
               />
-
-              {/* Notation help */}
-              <div className="mt-6 p-6 bg-white/[0.02] border border-white/5">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-4">Quick Reference</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-medium text-white/60">
-                  <div><code className="text-cyan-400 font-bold">1-7</code> Scale degrees</div>
-                  <div><code className="text-cyan-400 font-bold">1°</code> Higher octave</div>
-                  <div><code className="text-cyan-400 font-bold">(1 3 5)</code> Chord (spaced)</div>
-                  <div><code className="text-cyan-400 font-bold">135</code> Chord (compact)</div>
-                  <div><code className="text-cyan-400 font-bold">-</code> Rest</div>
-                  <div><code className="text-cyan-400 font-bold">Enter</code> New phrase</div>
-                  <div><code className="text-cyan-400 font-bold">Space</code> Separator</div>
-                  <div><code className="text-cyan-400 font-bold">* '</code> Markers</div>
-                </div>
-              </div>
             </div>
-          )}
+          </div>
+
+          {/* Chart Panel (Right) */}
+          <div className={cn(
+            "flex-1 flex flex-col transition-all bg-[#0a0a0a]",
+            // Auto-hide on mobile if mode is text
+            editorMode === 'text' ? "hidden md:flex" : "flex"
+          )}>
+            <div className="p-4 bg-black/40 border-b border-white/5 flex justify-between items-center md:hidden">
+              <h3 className="text-sm font-black italic uppercase tracking-widest text-white/50">Visual Chart</h3>
+            </div>
+            <div className="flex-1 relative overflow-hidden">
+              <ChartEditor
+                ref={chartRef}
+                onScroll={handleChartScroll}
+                notes={notes}
+                bpm={bpm}
+                timeSignature={timeSignature}
+                duration={duration}
+                authorTuning={authorTuning}
+                authorScale={authorScale}
+                authorTineCount={authorTineCount}
+                onNotesChange={handleNotesChange}
+                onDurationChange={setDuration}
+                gridResolution={gridResolution}
+              />
+            </div>
+          </div>
+
         </div>
       </div>
     </motion.div>

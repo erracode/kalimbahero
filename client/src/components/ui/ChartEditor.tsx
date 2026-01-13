@@ -3,13 +3,13 @@
 // ============================================
 // Visual timeline-based note editor for creating songs
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { motion } from 'framer-motion';
 import {
   Play, Pause, ZoomIn, ZoomOut, Trash2,
-  SkipBack, Grid, Music, Plus, Minus
+  SkipBack, Music, Plus, Minus
 } from 'lucide-react';
-import { KALIMBA_KEYS, getKeyColor, getKeyDisplayLabel } from '@/utils/frequencyMap';
+import { generateKalimbaLayout, getKeyColor, getKeyDisplayLabel } from '@/utils/frequencyMap';
 import { initKalimbaAudio, playNote } from '@/utils/kalimbaAudio';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,45 +31,75 @@ interface ChartEditorProps {
   onDurationChange: (duration: number) => void;
   onBpmChange?: (bpm: number) => void;
   onTimeSignatureChange?: (ts: TimeSignature) => void;
+  authorTuning?: string;
+  authorScale?: string;
+  authorTineCount?: number;
+  onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  gridResolution?: number;
 }
 
 // Note grid constants
-const LANE_WIDTH = 36;
+// Note grid constants
+// Lane widths are dynamic now
 const BEAT_HEIGHT = 80;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
-const TOTAL_LANES = 21;
-const GRID_WIDTH = TOTAL_LANES * LANE_WIDTH;
+
+// Generate unique ID
+const BASE_LANE_WIDTH = 36;
+const COMPACT_LANE_WIDTH = 26;
 
 // Generate unique ID
 const generateId = () => `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-export const ChartEditor: React.FC<ChartEditorProps> = ({
-  notes,
-  bpm,
-  timeSignature = '4/4',
-  duration,
-  onNotesChange,
-  onDurationChange,
-  onBpmChange,
-  onTimeSignatureChange,
-}) => {
+export const ChartEditor = forwardRef<HTMLDivElement, ChartEditorProps>((props, ref) => {
+  const {
+    notes,
+    bpm,
+    timeSignature = '4/4',
+    duration,
+    onNotesChange,
+    onDurationChange,
+    onBpmChange: _onBpmChange,
+    onTimeSignatureChange,
+    authorTuning = 'C',
+    authorScale = 'Major',
+    authorTineCount = 17,
+    onScroll,
+    gridResolution = 16,
+  } = props;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // Expose the container ref to parent
+  useImperativeHandle(ref, () => containerRef.current as HTMLDivElement);
+
+  // Dynamic Kalimba Config
+  const kalimbaKeys = useMemo(() => {
+    return generateKalimbaLayout(authorTineCount, authorTuning, authorScale);
+  }, [authorTineCount, authorTuning, authorScale]);
+
+  const totalLanes = kalimbaKeys.length;
+  // Use compact width for high key counts (e.g. 34)
+  const laneWidth = totalLanes >= 30 ? COMPACT_LANE_WIDTH : BASE_LANE_WIDTH;
+  const gridWidth = totalLanes * laneWidth;
+
   const [zoom, setZoom] = useState(1);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
-  // Snap to grid is always enabled
   const [autoScroll, setAutoScroll] = useState(true); // Auto-scroll during playback
   const [isLeftMouseDown, setIsLeftMouseDown] = useState(false); // Track left mouse button for continuous adding
   const [isRightMouseDown, setIsRightMouseDown] = useState(false); // Track right mouse button for continuous deleting
   const [hoveredCell, setHoveredCell] = useState<{ time: number; keyIndex: number } | null>(null); // Track hovered grid cell
 
-  // Grid division is automatically determined by time signature denominator
+  // Grid division is automatically determined by grid resolution and time signature
   const gridDivision = useMemo(() => {
-    return parseInt(timeSignature.split('/')[1]);
-  }, [timeSignature]);
+    const denominator = parseInt(timeSignature.split('/')[1]) || 4;
+    // divisions per beat (if resolution is 16, and measure is 4 beats, division is 4)
+    return Math.max(1, (gridResolution || 16) / denominator);
+  }, [timeSignature, gridResolution]);
   const [totalBeats, setTotalBeats] = useState(Math.ceil(duration * bpm / 60));
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, scrollTop: 0 });
@@ -135,7 +165,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     if (beatsFromDuration !== totalBeats) {
       setTotalBeats(beatsFromDuration);
     }
-  }, [duration, bpm]);
+  }, [duration, bpm, totalBeats]);
 
   // Update duration when beats change internally (via +/- buttons)
   const updateBeats = useCallback((newBeats: number) => {
@@ -187,7 +217,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     const y = e.clientY - rect.top;
 
     // Calculate hovered cell
-    const keyIndex = Math.floor(x / LANE_WIDTH);
+    const keyIndex = Math.floor(x / laneWidth);
 
     // Calculate which cell the mouse is over based on Y position directly (more accurate)
     const cellHeight = (BEAT_HEIGHT * zoom) / gridDivision;
@@ -209,14 +239,14 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     const time = (cellIndex / gridDivision) * beatDuration;
     const snappedTime = snapTime(time);
 
-    if (keyIndex >= 0 && keyIndex < TOTAL_LANES) {
+    if (keyIndex >= 0 && keyIndex < totalLanes) {
       setHoveredCell({ time: snappedTime, keyIndex });
 
       // Set highlight position directly from cell calculation (no double conversion)
       setHoveredCellPos({
         time: snappedTime,
         keyIndex,
-        x: keyIndex * LANE_WIDTH,
+        x: keyIndex * laneWidth,
         y: cellTopY, // Top of the cell
       });
 
@@ -229,7 +259,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         );
 
         if (!existingNote) {
-          const key = KALIMBA_KEYS[keyIndex];
+          const key = kalimbaKeys[keyIndex];
           const noteDuration = beatDuration / gridDivision;
           const newNote: SongNote = {
             id: generateId(),
@@ -240,7 +270,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
             frequency: key.frequency,
           };
           onNotesChange([...notes, newNote].sort((a, b) => a.time - b.time));
-          playNote(keyIndex).catch(console.error);
+          playNote(keyIndex, kalimbaKeys).catch(console.error);
         }
       }
 
@@ -257,7 +287,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         }
       }
     }
-  }, [yToTime, timeToY, isLeftMouseDown, isRightMouseDown, draggingNote, notes, snapTime, beatDuration, gridDivision, zoom, onNotesChange]);
+  }, [yToTime, isLeftMouseDown, isRightMouseDown, draggingNote, notes, snapTime, beatDuration, gridDivision, zoom, onNotesChange, gridHeight, totalLanes, kalimbaKeys, totalBeats]);
 
   const handleGridMouseLeave = useCallback(() => {
     setHoveredCell(null);
@@ -284,23 +314,6 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
       }
     }
   }, [draggingNote]);
-
-  // Handle play from specific time
-  const handlePlayFromTime = useCallback((time: number) => {
-    // If already playing, stop first to reset the interval
-    if (isPlaying && playIntervalRef.current) {
-      clearInterval(playIntervalRef.current);
-      playIntervalRef.current = null;
-    }
-
-    // Clear played notes and set new starting point
-    playedNotesRef.current.clear();
-    previousPlayheadRef.current = time;
-    setPlayhead(time);
-
-    // Start playing from the new time
-    setIsPlaying(true);
-  }, [isPlaying]);
 
   // Handle left click on grid to add note (single click, continuous handled in mouse move)
   const handleGridClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -329,8 +342,8 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const keyIndex = Math.floor(x / LANE_WIDTH);
-    if (keyIndex < 0 || keyIndex >= TOTAL_LANES) return;
+    const keyIndex = Math.floor(x / laneWidth);
+    if (keyIndex < 0 || keyIndex >= totalLanes) return;
 
     // Use the same calculation as hover to ensure precision
     const cellHeight = (BEAT_HEIGHT * zoom) / gridDivision;
@@ -351,7 +364,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     );
 
     if (!existingNote) {
-      const key = KALIMBA_KEYS[keyIndex];
+      const key = kalimbaKeys[keyIndex];
       const noteDuration = beatDuration / gridDivision;
       const newNote: SongNote = {
         id: generateId(),
@@ -362,9 +375,9 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         frequency: key.frequency,
       };
       onNotesChange([...notes, newNote].sort((a, b) => a.time - b.time));
-      playNote(keyIndex).catch(console.error);
+      playNote(keyIndex, kalimbaKeys).catch(console.error);
     }
-  }, [notes, snapTime, beatDuration, gridDivision, zoom, gridHeight, onNotesChange, isDragging, draggingNote]);
+  }, [notes, snapTime, beatDuration, gridDivision, zoom, gridHeight, onNotesChange, isDragging, draggingNote, totalLanes, kalimbaKeys, totalBeats]);
 
   // Handle right click on grid to delete note
   const handleGridContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -381,8 +394,8 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const keyIndex = Math.floor(x / LANE_WIDTH);
-    if (keyIndex < 0 || keyIndex >= TOTAL_LANES) return;
+    const keyIndex = Math.floor(x / laneWidth);
+    if (keyIndex < 0 || keyIndex >= totalLanes) return;
 
     const time = snapTime(yToTime(y));
     const noteToDelete = notes.find(n =>
@@ -393,7 +406,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     if (noteToDelete) {
       onNotesChange(notes.filter(n => n.id !== noteToDelete.id));
     }
-  }, [notes, yToTime, snapTime, beatDuration, gridDivision, onNotesChange]);
+  }, [notes, yToTime, snapTime, beatDuration, gridDivision, onNotesChange, totalLanes]);
 
   // Handle mouse down on grid
   const handleGridMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -442,9 +455,10 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     setMouseDownPos({ x: e.clientX, y: e.clientY }); // Store initial mouse position
     setDraggingNote(noteId);
     previousDragKeyRef.current = note.keyIndex; // Initialize with current key
+    const initialKeyY = timeToY(note.time, true);
     setDragOffset({
-      x: e.clientX - rect.left - (note.keyIndex * LANE_WIDTH),
-      y: e.clientY - rect.top - timeToY(note.time, true),
+      x: e.clientX - rect.left - (note.keyIndex * laneWidth),
+      y: e.clientY - rect.top - initialKeyY,
     });
   }, [notes, selectedNotes, timeToY]);
 
@@ -465,13 +479,13 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
       const x = e.clientX - rect.left - dragOffset.x;
       const y = e.clientY - rect.top - dragOffset.y;
 
-      const keyIndex = Math.max(0, Math.min(TOTAL_LANES - 1, Math.floor(x / LANE_WIDTH)));
+      const keyIndex = Math.max(0, Math.min(totalLanes - 1, Math.floor(x / laneWidth)));
       // Calculate time from Y position - account for note centering
       const time = yToTime(y);
 
       // Play sound when key changes during drag
       if (previousDragKeyRef.current !== keyIndex) {
-        playNote(keyIndex).catch(console.error);
+        playNote(keyIndex, kalimbaKeys).catch(console.error);
         previousDragKeyRef.current = keyIndex;
       }
 
@@ -485,7 +499,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         const draggedNote = notes.find(n => n.id === draggingNote);
         if (draggedNote) {
           // Get new position of dragged note
-          const newKeyIndex = Math.max(0, Math.min(TOTAL_LANES - 1, Math.floor(x / LANE_WIDTH)));
+          const newKeyIndex = Math.max(0, Math.min(totalLanes - 1, Math.floor(x / laneWidth)));
           const newTime = yToTime(y);
 
           // Calculate deltas
@@ -494,16 +508,18 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
 
           // Play sound when key changes during drag
           if (previousDragKeyRef.current !== newKeyIndex) {
-            playNote(newKeyIndex).catch(console.error);
+            playNote(newKeyIndex, kalimbaKeys).catch(console.error);
             previousDragKeyRef.current = newKeyIndex;
           }
 
           // Move all selected notes by the same delta
           onNotesChange(notes.map(n => {
             if (n.id && notesToMove.includes(n.id)) {
-              const finalKeyIndex = Math.max(0, Math.min(TOTAL_LANES - 1, n.keyIndex + deltaKey));
+              const finalKeyIndex = Math.max(0, Math.min(totalLanes - 1, n.keyIndex + deltaKey));
               const finalTime = Math.max(0, n.time + deltaTime);
-              const key = KALIMBA_KEYS[finalKeyIndex];
+              const key = kalimbaKeys[finalKeyIndex];
+              // Safety check if key is out of bounds
+              if (!key) return n;
               return {
                 ...n,
                 keyIndex: finalKeyIndex,
@@ -519,7 +535,9 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         // Move single note
         onNotesChange(notes.map(n => {
           if (n.id === draggingNote) {
-            const key = KALIMBA_KEYS[keyIndex];
+            const key = kalimbaKeys[keyIndex];
+            // Safety check
+            if (!key) return n;
             return {
               ...n,
               keyIndex,
@@ -536,10 +554,10 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
       const deltaY = e.clientY - dragStart.y;
       containerRef.current.scrollTop = dragStart.scrollTop - deltaY;
     }
-  }, [draggingNote, isDragging, dragOffset, dragStart, mouseDownPos, notes, selectedNotes, onNotesChange, yToTime, zoom]);
+  }, [draggingNote, isDragging, dragOffset, dragStart, mouseDownPos, notes, selectedNotes, onNotesChange, yToTime, zoom, totalLanes, kalimbaKeys]);
 
   // Handle mouse up
-  const handleMouseUp = useCallback((e?: React.MouseEvent) => {
+  const handleMouseUp = useCallback((_e?: React.MouseEvent) => {
     // If we clicked on a note but didn't drag it, delete the note
     // Only delete if it was a simple click (not a drag)
     const wasDragging = hasDragged && draggingNote !== null;
@@ -619,7 +637,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
 
             if (shouldPlay && noteId) {
               playedNotesRef.current.add(noteId);
-              playNote(note.keyIndex).catch(console.error);
+              playNote(note.keyIndex, kalimbaKeys).catch(console.error);
             }
           });
 
@@ -654,7 +672,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         clearInterval(playIntervalRef.current);
       }
     };
-  }, [isPlaying, playhead, duration, timeToY, notes, tempo, bpm]);
+  }, [isPlaying, playhead, duration, timeToY, notes, tempo, bpm, autoScroll, kalimbaKeys]);
 
   // Delete selected notes
   const deleteSelectedNotes = useCallback(() => {
@@ -721,7 +739,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
 
   // Render beat grid lines - number every cell, not just beats
   const gridLines = useMemo(() => {
-    const lines: JSX.Element[] = [];
+    const lines: React.ReactNode[] = [];
     const cellHeight = (BEAT_HEIGHT * zoom) / gridDivision;
     const totalCells = totalBeats * gridDivision;
 
@@ -737,7 +755,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
           key={`cell-${cell}`}
           className={`absolute left-0 pointer-events-none ${isMeasure ? 'border-t-2 border-white/40' : isBeatLine ? 'border-t border-white/15' : 'border-t border-white/5'
             }`}
-          style={{ top: y, width: GRID_WIDTH }}
+          style={{ top: y, width: gridWidth }}
         >
           {/* Number every cell - centered vertically in the cell */}
           {cell < totalCells && (
@@ -758,11 +776,11 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
     }
 
     return lines;
-  }, [totalBeats, zoom, gridDivision, gridHeight, beatsPerMeasure]);
+  }, [totalBeats, zoom, gridDivision, gridHeight, beatsPerMeasure, gridWidth]);
 
   // Generate play buttons for each grid row (cell) - in the left gutter area
   const playButtons = useMemo(() => {
-    const buttons: JSX.Element[] = [];
+    const buttons: React.ReactNode[] = [];
     const cellHeight = (BEAT_HEIGHT * zoom) / gridDivision;
     const totalCells = totalBeats * gridDivision;
 
@@ -848,9 +866,9 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-[#111] border-white/20">
-                <SelectItem value="4/4" className="focus:bg-white/10 text-white hover:bg-white/10 cursor-pointer">4/4</SelectItem>
-                <SelectItem value="3/4" className="focus:bg-white/10 text-white hover:bg-white/10 cursor-pointer">3/4</SelectItem>
-                <SelectItem value="2/4" className="focus:bg-white/10 text-white hover:bg-white/10 cursor-pointer">2/4</SelectItem>
+                <SelectItem value="4/4" className="text-white hover:bg-white/10 cursor-pointer">4/4</SelectItem>
+                <SelectItem value="3/4" className="text-white hover:bg-white/10 cursor-pointer">3/4</SelectItem>
+                <SelectItem value="2/4" className="text-white hover:bg-white/10 cursor-pointer">2/4</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -979,6 +997,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
         {/* Scrollable grid area */}
         <div
           ref={containerRef}
+          onScroll={onScroll}
           className="flex-1 overflow-auto relative"
           style={{ cursor: isDragging ? 'grabbing' : 'default' }}
         >
@@ -992,7 +1011,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
             ref={gridRef}
             className="relative"
             style={{
-              width: GRID_WIDTH,
+              width: gridWidth,
               height: gridHeight,
               minHeight: '100%',
               marginLeft: '40px',
@@ -1007,15 +1026,15 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
             onMouseLeave={handleGridMouseLeave}
           >
             {/* Lane backgrounds */}
-            {KALIMBA_KEYS.map((_, index) => {
-              const color = getKeyColor(index);
+            {kalimbaKeys.map((_, index) => {
+              const color = getKeyColor(index, totalLanes);
               return (
                 <div
                   key={`lane-${index}`}
                   className="absolute top-0 bottom-0 border-r border-white/10"
                   style={{
-                    left: index * LANE_WIDTH,
-                    width: LANE_WIDTH,
+                    left: index * laneWidth,
+                    width: laneWidth,
                     backgroundColor: `${color}08`,
                   }}
                 />
@@ -1035,7 +1054,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
 
                 // Only show highlight if there's no existing note
                 if (!existingNote) {
-                  const color = getKeyColor(hoveredCellPos.keyIndex);
+                  const color = getKeyColor(hoveredCellPos.keyIndex, totalLanes);
                   const cellHeight = (BEAT_HEIGHT * zoom) / gridDivision;
                   return (
                     <div
@@ -1043,7 +1062,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
                       style={{
                         left: hoveredCellPos.x + 2,
                         top: hoveredCellPos.y,
-                        width: LANE_WIDTH - 4,
+                        width: laneWidth - 4,
                         height: cellHeight - 2,
                         backgroundColor: `${color}30`,
                         border: `2px solid ${color}`,
@@ -1058,21 +1077,25 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
 
             {/* Notes */}
             {notes.map((note) => {
-              const color = getKeyColor(note.keyIndex);
-              const notation = getKeyDisplayLabel(note.keyIndex);
+              // Safety check for keys out of bounds when switching layouts
+              if (note.keyIndex >= totalLanes) return null;
+
+              const color = getKeyColor(note.keyIndex, totalLanes);
+              const key = kalimbaKeys[note.keyIndex];
+              const notation = key ? getKeyDisplayLabel(key) : { degree: '?', note: '?' };
+
               // Calculate note size based on its duration relative to beat
               const gridCellHeight = (BEAT_HEIGHT * zoom) / gridDivision;
               const noteHeight = Math.max(18, Math.min(gridCellHeight - 1, ((note.duration || 0) / beatDuration) * BEAT_HEIGHT * zoom));
 
               // Align note perfectly with grid cell (same calculation as highlight)
               // Calculate which cell this note belongs to based on time
-              // Use the same logic as when creating notes: calculate cell from time
               const cellIndex = Math.floor((note.time / beatDuration) * gridDivision);
               // Calculate the top of the cell in normal coordinates (from top of grid)
               const cellTopY = gridHeight - ((cellIndex + 1) * gridCellHeight);
               // Center note vertically in the cell
               const y = cellTopY + (gridCellHeight / 2) - (noteHeight / 2);
-              const x = note.keyIndex * LANE_WIDTH;
+              const x = note.keyIndex * laneWidth;
               const isSelected = note.id ? selectedNotes.has(note.id) : false;
               const isBeingDragged = note.id && draggingNote === note.id;
 
@@ -1084,7 +1107,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
                   style={{
                     left: x + 1,
                     top: y,
-                    width: LANE_WIDTH - 2,
+                    width: laneWidth - 2,
                     height: noteHeight,
                     backgroundColor: color,
                     boxShadow: `0 0 10px ${color}90, inset 0 1px 0 rgba(255,255,255,0.4)`,
@@ -1156,7 +1179,7 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
               className="absolute left-0 h-1 bg-cyan-400 pointer-events-none z-50 rounded-full"
               style={{
                 top: timeToY(playhead, false) - 2,
-                width: GRID_WIDTH,
+                width: gridWidth,
                 boxShadow: '0 0 15px #00E5FF, 0 0 30px #00E5FF50',
               }}
             />
@@ -1168,33 +1191,39 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
       <div className="flex bg-black/40 border-t border-white/20">
         <div className="w-10 flex-shrink-0" />
         <div className="flex" style={{ marginLeft: '40px' }}>
-          {KALIMBA_KEYS.map((_, index) => {
-            const label = getKeyDisplayLabel(index);
-            const color = getKeyColor(index);
-            const isCenterKey = index === 10;
+          {kalimbaKeys.map((key, index) => {
+            const label = getKeyDisplayLabel(key);
+            const color = getKeyColor(index, totalLanes);
+            const isCenterKey = index === Math.floor(totalLanes / 2);
+            const isChromatic = key.isChromatic;
+            const isHighCount = totalLanes >= 34;
 
             return (
               <div
                 key={index}
-                className={`flex flex-col items-center justify-center py-2 border-r border-white/10 ${isCenterKey ? 'bg-white/10' : ''
-                  }`}
+                className={`flex flex-col items-center justify-center border-r border-white/10 ${isCenterKey ? 'bg-white/10' : ''
+                  } ${isChromatic ? 'bg-black/40' : ''}`}
                 style={{
-                  width: LANE_WIDTH,
+                  width: laneWidth,
                   borderBottom: `3px solid ${color}`,
+                  paddingTop: isHighCount ? '4px' : '8px',
+                  paddingBottom: isHighCount ? '4px' : '8px',
                 }}
               >
-                <span
-                  className="text-xs font-bold"
-                  style={{ color }}
-                >
-                  {label.degree}
-                </span>
-                <span
-                  className="text-[9px] opacity-60"
-                  style={{ color }}
-                >
-                  {label.note.replace(/[°]/g, '')}
-                </span>
+                <div className={`flex flex-col items-center gap-0.5 ${isHighCount ? 'rotate-[-90deg] origin-center translate-y-2' : ''}`}>
+                  <span
+                    className={`${isHighCount ? 'text-[10px]' : 'text-xs'} font-bold whitespace-nowrap`}
+                    style={{ color }}
+                  >
+                    {label.degree}
+                  </span>
+                  <span
+                    className={`${isHighCount ? 'text-[8px]' : 'text-[9px]'} opacity-60 whitespace-nowrap`}
+                    style={{ color }}
+                  >
+                    {label.note.replace(/[°]/g, '')}
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -1216,6 +1245,6 @@ export const ChartEditor: React.FC<ChartEditorProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export default ChartEditor;

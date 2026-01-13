@@ -3,10 +3,12 @@
 // ============================================
 // Uses Pitchy for real-time pitch detection from microphone
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { PitchDetector } from 'pitchy';
-import type { DetectedPitch } from '@/types/game';
-import { findClosestKey, isInKalimbaRange } from '@/utils/frequencyMap';
+import type { DetectedPitch, KalimbaKey } from '@/types/game';
+import { findClosestKey, isInKalimbaRange, getKalimbaConfig } from '@/utils/frequencyMap';
+import { HARDWARE_PRESETS } from '@/utils/hardwarePresets';
+import { useGameStore } from '@/stores/gameStore';
 
 interface UseAudioDetectionOptions {
   enabled?: boolean;
@@ -15,6 +17,7 @@ interface UseAudioDetectionOptions {
   volumeThreshold?: number;   // Minimum RMS volume level (0-1)
   sampleRate?: number;
   fftSize?: number;
+  kalimbaKeys?: KalimbaKey[]; // Optional override for kalimba keys
 }
 
 interface UseAudioDetectionReturn {
@@ -38,6 +41,18 @@ export const useAudioDetection = (
     sampleRate = 44100,
     fftSize = 2048,
   } = options;
+
+  // Get settings for dynamic key generation
+  const settings = useGameStore(state => state.settings);
+
+  // Generate kalimba keys dynamically from settings (or use override)
+  const dynamicKeys = useMemo(() => {
+    if (options.kalimbaKeys && options.kalimbaKeys.length > 0) {
+      return options.kalimbaKeys;
+    }
+    const preset = HARDWARE_PRESETS[settings.hardwarePresetId] || HARDWARE_PRESETS['17'];
+    return getKalimbaConfig(preset.tinesCount, settings.userTuning);
+  }, [settings.hardwarePresetId, settings.userTuning, options.kalimbaKeys]);
 
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
@@ -69,6 +84,12 @@ export const useAudioDetection = (
   useEffect(() => {
     volumeThresholdRef.current = volumeThreshold;
   }, [volumeThreshold]);
+
+  // Ref for dynamic keys to avoid stale closures
+  const kalimbaKeysRef = useRef<KalimbaKey[]>(dynamicKeys);
+  useEffect(() => {
+    kalimbaKeysRef.current = dynamicKeys;
+  }, [dynamicKeys]);
 
   // Check browser support
   useEffect(() => {
@@ -124,9 +145,9 @@ export const useAudioDetection = (
       const passesVolume = rms >= volumeThresholdRef.current;
 
       if (passesVolume) {
-        // Check if frequency is in kalimba range
-        if (isInKalimbaRange(frequency)) {
-          const match = findClosestKey(frequency, pitchToleranceRef.current);
+        // Check if frequency is in kalimba range and we have keys configured
+        if (isInKalimbaRange(frequency) && kalimbaKeysRef.current.length > 0) {
+          const match = findClosestKey(frequency, kalimbaKeysRef.current, pitchToleranceRef.current);
 
           if (match) {
             console.log(`✅ ${match.key.noteName}: ${frequency.toFixed(1)}Hz (Vol: ${(rms * 100).toFixed(2)}%)`);

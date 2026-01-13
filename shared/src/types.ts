@@ -10,6 +10,19 @@ export interface ApiResponse<T = any> {
     error?: string;
 }
 
+// Kalimba Hardware Presets
+export type HardwarePresetId = '8' | '9' | '10' | '13' | '17' | '21' | '34';
+
+export interface HardwarePreset {
+    id: HardwarePresetId;
+    name: string;
+    tinesCount: number;
+    centerNoteIndex: number;
+    defaultRoot: string;
+    description?: string;
+    isChromatic?: boolean;
+}
+
 // Difficulty levels
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert';
 
@@ -68,4 +81,6 @@ export interface Song {
     color?: string;
     notation?: string;      // original notation string
     createdAt?: number;     // timestamp
+    authorTuning?: string;  // e.g., "C", "F"
+    authorTineCount?: number; // e.g., 17, 21
 }

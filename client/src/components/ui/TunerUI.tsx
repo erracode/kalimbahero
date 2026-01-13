@@ -1,22 +1,31 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertCircle, Mic, MousePointer, X } from 'lucide-react';
+import { Mic, MousePointer } from 'lucide-react';
 import { useAudioDetection } from '@/hooks/useAudioDetection';
-import { KALIMBA_KEYS } from '@/utils/frequencyMap';
+import { generateKalimbaLayout } from '@/utils/frequencyMap';
+import { HARDWARE_PRESETS } from '@/utils/hardwarePresets';
+import { useGameStore } from '@/stores/gameStore';
 import { Canvas } from '@react-three/fiber';
 import { Kalimba3D } from '../game/Kalimba3D';
 import * as THREE from 'three';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { cn } from '@/lib/utils';
 import { AuroraBackground } from './AuroraBackground';
-import { NeonButton } from './NeonButton';
-import { useNavigate } from '@tanstack/react-router';
 
 export const TunerUI: React.FC = () => {
-    const navigate = useNavigate();
+    const settings = useGameStore(state => state.settings);
     const [isActive] = useState(true);
     const [mode, setMode] = useState<'auto' | 'manual'>('auto');
-    const [manualTargetIndex, setManualTargetIndex] = useState<number>(10);
+
+    // Generate kalimba keys dynamically from settings
+    const kalimbaKeys = useMemo(() => {
+        const preset = HARDWARE_PRESETS[settings.hardwarePresetId] || HARDWARE_PRESETS['17'];
+        return generateKalimbaLayout(preset.tinesCount, settings.userTuning, preset.scale || 'Major');
+    }, [settings.hardwarePresetId, settings.userTuning]);
+
+    // Center key index for initial manual selection
+    const centerIndex = Math.floor(kalimbaKeys.length / 2);
+    const [manualTargetIndex, setManualTargetIndex] = useState<number>(centerIndex);
 
     const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -24,6 +33,7 @@ export const TunerUI: React.FC = () => {
         enabled: isActive,
         clarityThreshold: 0.75,
         pitchTolerance: 50,
+        kalimbaKeys,
     });
 
     useEffect(() => {
@@ -50,7 +60,7 @@ export const TunerUI: React.FC = () => {
     };
 
     const handleTineClick = (index: number) => {
-        const key = KALIMBA_KEYS[index];
+        const key = kalimbaKeys[index];
         if (key) {
             playTone(key.frequency);
             if (mode === 'manual') setManualTargetIndex(index);
@@ -58,17 +68,18 @@ export const TunerUI: React.FC = () => {
     };
 
     const targetKey = useMemo(() => {
-        if (mode === 'manual') return KALIMBA_KEYS[manualTargetIndex];
+        if (mode === 'manual') return kalimbaKeys[manualTargetIndex];
         if (!currentPitch || !currentPitch.noteName) return null;
-        return KALIMBA_KEYS.find(k => k.noteName === currentPitch.noteName) || null;
-    }, [mode, manualTargetIndex, currentPitch]);
+        return kalimbaKeys.find(k => k.noteName === currentPitch.noteName) || null;
+    }, [mode, manualTargetIndex, currentPitch, kalimbaKeys]);
 
     const deviation = useMemo(() => {
         if (!currentPitch) return null;
         if (mode === 'auto') return currentPitch.cents;
-        const targetFreq = KALIMBA_KEYS[manualTargetIndex].frequency;
+        const targetFreq = kalimbaKeys[manualTargetIndex]?.frequency;
+        if (!targetFreq) return null;
         return 1200 * Math.log2(currentPitch.frequency / targetFreq);
-    }, [currentPitch, mode, manualTargetIndex]);
+    }, [currentPitch, mode, manualTargetIndex, kalimbaKeys]);
 
     const isInTune = deviation !== null && Math.abs(deviation) < 10;
     const isClose = deviation !== null && Math.abs(deviation) < 25;
@@ -136,7 +147,7 @@ export const TunerUI: React.FC = () => {
                         <h2 className="text-white/40 font-black uppercase tracking-[0.3em] text-[10px] mb-2">Current Tone</h2>
                         <AnimatePresence mode="wait">
                             <motion.div
-                                key={targetKey?.displayNote || (mode === 'manual' ? KALIMBA_KEYS[manualTargetIndex].displayNote : 'idle')}
+                                key={targetKey?.displayNote || (mode === 'manual' ? kalimbaKeys[manualTargetIndex]?.displayNote : 'idle')}
                                 initial={{ opacity: 0, scale: 0.9 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.9 }}
@@ -146,7 +157,7 @@ export const TunerUI: React.FC = () => {
                                     "text-7xl font-black italic tracking-tighter drop-shadow-xl",
                                     isInTune ? "text-[#00FF88]" : "text-white"
                                 )}>
-                                    {targetKey?.displayNote || (mode === 'manual' ? KALIMBA_KEYS[manualTargetIndex].displayNote : '--')}
+                                    {targetKey?.displayNote || (mode === 'manual' ? kalimbaKeys[manualTargetIndex]?.displayNote : '--')}
                                 </span>
                                 {targetKey && (
                                     <span className="text-3xl font-bold text-cyan-400">

@@ -2,6 +2,20 @@
 // Kalimba Hero - Type Definitions
 // ============================================
 
+// Kalimba Hardware Presets
+export type HardwarePresetId = '8' | '9' | '10' | '13' | '17' | '21' | '34';
+
+export interface HardwarePreset {
+  id: HardwarePresetId;
+  name: string;
+  tinesCount: number;
+  centerNoteIndex: number;
+  defaultRoot: string;
+  description?: string;
+  isChromatic?: boolean;
+  scale?: string; // Default scale for this preset
+}
+
 // Difficulty levels
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert';
 
@@ -21,6 +35,7 @@ export interface KalimbaKey {
   physicalPosition: number;
   displayDegree: string;  // e.g., "1", "1°", "1°°" - what shows on the tine
   displayNote: string;    // e.g., "C", "C°", "C°°" - note with marker
+  isChromatic?: boolean;  // Optional, true for upper layer keys
 }
 
 // Lane configuration for 3D rendering
@@ -63,6 +78,7 @@ export interface Song {
   isCloud?: boolean;      // synced to cloud
   isPublic?: boolean;     // published to community
   cloudId?: string;       // server UUID for cloud operations
+  raw_notation_backup?: string; // Original user-formatted notation preservation
   author?: {
     id: string;
     name: string;
@@ -77,6 +93,9 @@ export interface Song {
   averageRating?: number; // 1-5
   voteCount?: number;
   userRating?: number;    // 1-5
+  authorTuning?: string;  // e.g., "C", "F"
+  authorScale?: string;   // e.g., "Major", "Minor"
+  authorTineCount?: number; // e.g., 17, 21
 }
 
 // Real-time pitch detection result
@@ -99,6 +118,9 @@ export interface GameSettings {
   showNotation: boolean;
   showLaneNumbers: boolean;
   audioLatency: number;
+  hardwarePresetId: HardwarePresetId;
+  userTuning: string;     // e.g., "C", "F", "G"
+  labelType: 'numbers' | 'letters' | 'both';
 }
 
 // Score tracking
@@ -122,6 +144,7 @@ export interface NoteHit {
   accuracy: HitAccuracy;
   timeDelta: number;      // ms early/late
   keyIndex: number;
+  centsDelta?: number;    // pitch deviation
 }
 
 // Game state machine

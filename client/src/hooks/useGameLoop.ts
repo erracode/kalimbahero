@@ -3,10 +3,11 @@
 // ============================================
 // Manages game timing, note spawning, and hit detection
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import type { SongNote, DetectedPitch, HitAccuracy, NoteHit } from '@/types/game';
-import { KALIMBA_KEYS } from '@/utils/frequencyMap';
+import { getKalimbaConfig, getTranspositionOffset, transposeFrequency } from '@/utils/frequencyMap';
+import { HARDWARE_PRESETS } from '@/utils/hardwarePresets';
 
 interface UseGameLoopOptions {
   onNoteHit?: (hit: NoteHit) => void;
@@ -61,6 +62,18 @@ export const useGameLoop = (
   const lastPitchRef = useRef<DetectedPitch | null>(null);
   const processedMissesRef = useRef<Set<string>>(new Set());
 
+  // Calculate current kalimba keys based on settings
+  const kalimbaKeys = useMemo(() => {
+    const preset = HARDWARE_PRESETS[settings.hardwarePresetId] || HARDWARE_PRESETS['17'];
+    return getKalimbaConfig(preset.tinesCount, settings.userTuning);
+  }, [settings.hardwarePresetId, settings.userTuning]);
+
+  // Calculate transposition offset for the current song
+  const transpositionOffset = useMemo(() => {
+    if (!currentSong || !currentSong.authorTuning) return 0;
+    return getTranspositionOffset(currentSong.authorTuning, settings.userTuning);
+  }, [currentSong, settings.userTuning]);
+
   // Get visible notes based on current progress
   const getVisibleNotes = useCallback((): SongNote[] => {
     if (!currentSong) return [];
@@ -70,6 +83,7 @@ export const useGameLoop = (
     const endTime = progress + lookahead;
 
     return currentSong.notes.filter(note =>
+      note.id &&
       note.time >= startTime - 0.5 && // Small buffer for notes leaving
       note.time <= endTime &&
       !hitNotes.has(note.id)
@@ -85,6 +99,7 @@ export const useGameLoop = (
     return currentSong.notes.filter(note => {
       const timeDiff = note.time - progress;
       return (
+        note.id &&
         Math.abs(timeDiff) <= hitWindowSec &&
         !hitNotes.has(note.id)
       );
@@ -100,12 +115,18 @@ export const useGameLoop = (
     for (const note of hitZoneNotes) {
       if (hitNotes.has(note.id)) continue;
 
-      // Get expected frequency for this note
-      const expectedKey = KALIMBA_KEYS[note.keyIndex];
+      // Get expected frequency for this note from the dynamic config
+      const expectedKey = kalimbaKeys[note.keyIndex];
       if (!expectedKey) continue;
 
+      // Apply smart transposition if needed
+      let targetFrequency = expectedKey.frequency;
+      if (transpositionOffset !== 0) {
+        targetFrequency = transposeFrequency(targetFrequency, transpositionOffset);
+      }
+
       // Check if detected pitch matches the expected note
-      const centsDiff = 1200 * Math.log2(pitch.frequency / expectedKey.frequency);
+      const centsDiff = 1200 * Math.log2(pitch.frequency / targetFrequency);
 
       if (Math.abs(centsDiff) <= settings.pitchTolerance) {
         // We have a match!
@@ -146,7 +167,7 @@ export const useGameLoop = (
 
     currentSong.notes.forEach(note => {
       // Skip if already hit or already processed as miss
-      if (hitNotes.has(note.id) || processedMissesRef.current.has(note.id)) return;
+      if (!note.id || hitNotes.has(note.id) || processedMissesRef.current.has(note.id)) return;
 
       // Check if note has passed the hit zone
       const timeDiff = progress - note.time;
@@ -160,6 +181,7 @@ export const useGameLoop = (
           accuracy: 'miss',
           timeDelta: timeDiff * 1000,
           centsDelta: 0,
+          keyIndex: note.keyIndex,
         };
 
         registerHit(hit);

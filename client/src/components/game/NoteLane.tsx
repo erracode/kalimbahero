@@ -6,7 +6,8 @@
 import { useRef, useMemo } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
-import { LANE_COLORS } from "@/utils/frequencyMap"
+import { getKeyColor } from "@/utils/frequencyMap"
+import { useGameStore } from "@/stores/gameStore"
 
 interface NoteLaneProps {
   index: number
@@ -48,7 +49,9 @@ export const NoteLane: React.FC<NoteLaneProps> = ({
   const meshRef = useRef<THREE.Mesh>(null)
   const glowRef = useRef<THREE.Mesh>(null)
 
-  const color = LANE_COLORS[index]
+  const settings = useGameStore(state => state.settings);
+  const totalLanesCount = parseInt(settings.hardwarePresetId) || 17;
+  const color = getKeyColor(index, totalLanesCount);
   const colorObj = useMemo(() => new THREE.Color(color), [color])
 
   // Create gradient texture for fade effect
